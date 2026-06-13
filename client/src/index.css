@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+body {
+  @apply bg-neutral-100 text-neutral-900 antialiased;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.mono {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.card {
+  @apply bg-white border border-neutral-200 rounded-lg;
+}
+
+.label {
+  @apply text-[11px] font-semibold tracking-widest text-neutral-400 uppercase;
+}
+
+.input {
+  @apply border border-neutral-300 rounded-md px-3 py-1.5 text-sm bg-white
+    focus:outline-none focus:ring-2 focus:ring-neutral-400;
+}
+
+.btn {
+  @apply px-3 py-1.5 rounded-md text-sm font-medium border border-neutral-300
+    bg-white hover:bg-neutral-50 cursor-pointer;
+}
+
+.btn-dark {
+  @apply px-3 py-1.5 rounded-md text-sm font-medium bg-neutral-900 text-white
+    hover:bg-neutral-700 border border-neutral-900 cursor-pointer;
+}
+
+.th {
+  @apply px-3 py-2 text-left text-[11px] font-semibold tracking-wider text-neutral-500 uppercase bg-neutral-100;
+}
+
+.td {
+  @apply px-3 py-2 text-sm border-t border-neutral-100;
+}
+
+/* Growing log-style tables: fixed-height box that scrolls internally,
+   with the header row pinned — page layout stays stable as data appends. */
+.table-scroll {
+  @apply overflow-y-auto overflow-x-auto rounded-md;
+  max-height: 440px;
+}
+.table-scroll thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.table-scroll thead .th {
+  @apply bg-neutral-100 shadow-[0_1px_0_0_theme(colors.neutral.200)];
+}

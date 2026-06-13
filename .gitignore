@@ -1,0 +1,19 @@
+# dependencies (machine/OS-specific — reinstalled per machine)
+node_modules/
+
+# build output (regenerated)
+client/dist/
+*.tmp.xlsx
+
+# live data & backups (each install keeps its own; not for the repo)
+server/data/backups/
+server/data/*.tmp.xlsx
+server/data/before-*.xlsx
+server/data/attachments/
+
+# OS noise
+.DS_Store
+
+# the Windows bundle is generated, not source
+Musyati-Windows.zip
+manual-assets/

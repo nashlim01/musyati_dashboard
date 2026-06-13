@@ -1,0 +1,52 @@
+MUSYATI TRACKING MONITOR — HOW TO RUN
+=====================================
+
+TO START:
+  On Windows  ->  double-click  "launch-musyati.bat"
+  On Mac      ->  double-click  "launch-musyati.command"
+
+  A small window opens, the dashboard starts, and your web browser
+  opens automatically to the app. The first launch takes a minute or
+  two (one-time setup); after that it's a few seconds.
+
+WHILE USING IT:
+  Keep that window open. It is the engine running the app.
+
+TO STOP:
+  Close the window (or press Ctrl-C inside it).
+
+THE WEB ADDRESS:
+  http://localhost:4000
+  You can also type this into any browser on THIS computer while the
+  launcher window is running. Bookmark it for quick access.
+
+YOUR DATA:
+  Everything is stored in this one Excel file:
+      server/data/musyati-data.xlsx
+  Automatic timestamped backups are kept in:
+      server/data/backups/
+  You can also download a copy anytime using the "Backup Excel"
+  button at the top-right of the dashboard.
+
+REQUIREMENT — NODE.JS (one-time, free):
+  This needs Node.js installed on the computer. If the window says
+  "npm not found", install it from:
+      https://nodejs.org
+  (choose the "LTS" version), then double-click the launcher again.
+
+WINDOWS NOTE:
+  - If Windows SmartScreen shows "Windows protected your PC", click
+    "More info" -> "Run anyway" (one time only).
+
+MAC NOTE:
+  - If macOS shows "cannot be opened because it is from an
+    unidentified developer", right-click the file -> Open -> Open
+    (one time only). After that, double-click works normally.
+
+IMPORTANT — MOVING THE APP TO ANOTHER COMPUTER:
+  Copy the whole "musyati-dashboard" folder EXCEPT these two folders:
+      node_modules          (delete it before copying)
+      client/dist           (delete it before copying)
+  The launcher rebuilds both automatically on first run on the new
+  machine. (These folders contain machine-specific files and must not
+  be carried across from a different computer or operating system.)
