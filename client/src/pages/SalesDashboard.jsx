@@ -64,28 +64,27 @@ export default function SalesDashboard() {
     const rows = months.map((month) => {
       const monthPours = myPours.filter((p) => monthOf(p.date) === month)
       const volume = totalProduction(monthPours)
-      // claim + COGS computed per plant (auto from priced material movement)
-      let claim = 0, cogs = 0
+      // COGS computed per plant (auto from priced material movement)
+      let cogs = 0
       for (const plantId of selectedPlantIds) {
-        const row = myCosting.find((c) => c.month === month && Number(c.plant_id) === plantId)
         const m = monthCosting({
-          plantId, month, prevMonth: prevMonthOf(month), costingRow: row,
-          pours: pours.filter((p) => Number(p.plant_id) === plantId),
-          expenses: [], materialTxns: materialTxns.filter((t) => Number(t.plant_id) === plantId),
+          plantId, month, prevMonth: prevMonthOf(month),
+          pours: [], expenses: [], materialTxns: materialTxns.filter((t) => Number(t.plant_id) === plantId),
           materials, deliveries,
         })
-        claim += m.claim; cogs += m.cogs
+        cogs += m.cogs
       }
       const transport = myDeliveries.filter((dl) => monthOf(dl.date) === month).reduce((t, dl) => t + deliveryIncome(dl), 0)
       const monthSales = mySales.filter((s) => monthOf(s.date) === month)
       const salesRev = monthSales.reduce((t, s) => t + saleTotal(s), 0)
+      const saleVolume = monthSales.reduce((t, s) => t + num(s.volume_m3), 0)
       const expense = myExpenses.filter((e) => monthOf(e.date) === month).reduce((t, e) => t + num(e.amount_rm), 0)
-      const income = claim + salesRev + transport
+      const income = salesRev + transport
       const cost = cogs + expense
       const collected = myPayments.filter((p) => monthOf(p.date) === month).reduce((t, p) => t + num(p.amount_rm), 0)
       return {
         month, label: fmtMonth(month),
-        claim, salesRev, transport, income, cogs, expense, cost,
+        salesRev, transport, income, cogs, expense, cost, saleVolume,
         profit: income - cost, volume, collected, billed: salesRev,
       }
     })
@@ -132,9 +131,11 @@ export default function SalesDashboard() {
     }
     const agingRows = [...aging.values()].sort((a, b) => (b.b0 + b.b30 + b.b60) - (a.b0 + a.b30 + a.b60))
 
-    // unit economics
-    const unitRows = rows.filter((r) => r.volume > 0).map((r) => ({
-      label: r.label, price: r.claim / r.volume, cost: r.cost / r.volume,
+    // unit economics: avg sale price per m³ sold vs cost per m³ produced
+    const unitRows = rows.filter((r) => r.saleVolume > 0 || r.volume > 0).map((r) => ({
+      label: r.label,
+      price: r.saleVolume > 0 ? r.salesRev / r.saleVolume : 0,
+      cost: r.volume > 0 ? r.cost / r.volume : 0,
     }))
 
     // customer mix (external sales) + per-company outstanding from the account
@@ -166,6 +167,8 @@ export default function SalesDashboard() {
     const totIncome = rows.reduce((t, r) => t + r.income, 0)
     const totCost = rows.reduce((t, r) => t + r.cost, 0)
     const totVolume = rows.reduce((t, r) => t + r.volume, 0)
+    const totSaleVolume = rows.reduce((t, r) => t + r.saleVolume, 0)
+    const totSales = rows.reduce((t, r) => t + r.salesRev, 0)
 
     return {
       rows, projChart, next3, agingRows, dso: account.dso, unitRows, companyRows, gradeRows,
@@ -174,7 +177,7 @@ export default function SalesDashboard() {
       profit: totIncome - totCost,
       margin: totIncome > 0 ? ((totIncome - totCost) / totIncome) * 100 : 0,
       costPerM3: totVolume ? totCost / totVolume : 0,
-      pricePerM3: totVolume ? rows.reduce((t, r) => t + r.claim, 0) / totVolume : 0,
+      pricePerM3: totSaleVolume ? totSales / totSaleVolume : 0,
       outstanding: account.outstanding,
       credit: account.credit,
     }
@@ -190,10 +193,10 @@ export default function SalesDashboard() {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-        <KpiCard label="Total Income" value={fmtRM(d.totIncome)} sub="claim + sales + transport" color="text-blue-800" />
+        <KpiCard label="Total Income" value={fmtRM(d.totIncome)} sub="sales + transport" color="text-blue-800" />
         <KpiCard label="Profit" value={fmtRM(d.profit)} sub="income − COGS − expenses" color={d.profit < 0 ? 'text-red-700' : 'text-emerald-700'} />
         <KpiCard label="Profit Margin" value={`${fmtNum(d.margin, 1)}%`} sub="overall" color={d.margin < 0 ? 'text-red-700' : 'text-emerald-700'} />
-        <KpiCard label="Avg Claim Price" value={fmtRM(d.pricePerM3)} sub="per m³ produced" color="text-blue-700" />
+        <KpiCard label="Avg Sale Price" value={fmtRM(d.pricePerM3)} sub="per m³ sold" color="text-blue-700" />
         <KpiCard label="Cost per m³" value={fmtRM(d.costPerM3)} sub="COGS + expenses ÷ volume" color="text-red-700" />
         <KpiCard label="Collection Speed" value={`${fmtNum(d.dso, 0)} days`} sub={`avg sale → payment · ${fmtRM(d.outstanding)} unpaid`} color="text-amber-600" />
       </div>
@@ -205,9 +208,8 @@ export default function SalesDashboard() {
               <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} />
               <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-              <Tooltip formatter={(v, name) => [fmtRM(v), { claim: 'Production Claim', salesRev: 'Concrete Sales', transport: 'Transport', cost: 'Total Cost', profit: 'Profit' }[name] ?? name]} />
-              <Legend formatter={(v) => ({ claim: 'Production Claim', salesRev: 'Concrete Sales', transport: 'Transport', cost: 'Total Cost (COGS + Expenses)', profit: 'Profit' }[v] ?? v)} wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="claim" stackId="income" fill="#1e40af" />
+              <Tooltip formatter={(v, name) => [fmtRM(v), { salesRev: 'Concrete Sales', transport: 'Transport', cost: 'Total Cost', profit: 'Profit' }[name] ?? name]} />
+              <Legend formatter={(v) => ({ salesRev: 'Concrete Sales', transport: 'Transport', cost: 'Total Cost (COGS + Expenses)', profit: 'Profit' }[v] ?? v)} wrapperStyle={{ fontSize: 12 }} />
               <Bar dataKey="salesRev" stackId="income" fill="#0f766e" />
               <Bar dataKey="transport" stackId="income" fill="#7c3aed" radius={[4, 4, 0, 0]} />
               <Bar dataKey="cost" fill="#fca5a5" radius={[4, 4, 0, 0]} />
@@ -271,15 +273,15 @@ export default function SalesDashboard() {
           )}
         </SectionCard>
 
-        <SectionCard title="Unit Economics — claim price vs cost per m³">
+        <SectionCard title="Unit Economics — sale price vs cost per m³">
           {d.unitRows.length === 0 ? <Empty /> : (
             <ResponsiveContainer width="100%" height={260}>
               <ComposedChart data={d.unitRows} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
                 <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v, name) => [fmtRM(v), name === 'price' ? 'Avg claim price /m³' : 'Cost /m³']} />
-                <Legend formatter={(v) => v === 'price' ? 'Avg claim price /m³' : 'Cost /m³ (COGS + expenses)'} wrapperStyle={{ fontSize: 12 }} />
+                <Tooltip formatter={(v, name) => [fmtRM(v), name === 'price' ? 'Avg sale price /m³' : 'Cost /m³']} />
+                <Legend formatter={(v) => v === 'price' ? 'Avg sale price /m³' : 'Cost /m³ (COGS + expenses)'} wrapperStyle={{ fontSize: 12 }} />
                 <Line type="monotone" dataKey="price" stroke="#1e40af" strokeWidth={2.5} dot={{ r: 3 }} />
                 <Line type="monotone" dataKey="cost" stroke="#dc2626" strokeWidth={2.5} dot={{ r: 3 }} />
               </ComposedChart>

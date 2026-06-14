@@ -182,11 +182,15 @@ export function inventoryValue(materialTxns, deliveries, materials, { plantId, u
 // claim = month volume × claim price;  COGS = B/F + Purchases − C/F
 // transport = delivery income;  net = claim + transport − COGS − expenses
 // ---------------------------------------------------------------------------
-export function monthCosting({ plantId, month, prevMonth, costingRow, pours, expenses, materialTxns, materials, deliveries }) {
+export function monthCosting({ plantId, month, prevMonth, costingRow, pours, sales = [], expenses, materialTxns, materials, deliveries }) {
+  // production is an output metric; income comes from sales + transport, not claim
   const volume = totalProduction(pours.filter((p) => monthOf(p.date) === month))
   const price = num(costingRow?.claim_price_rm_per_m3)
-  const claim = volume * price
+  const productionValue = volume * price // info only
   const transport = transportIncome(deliveries, { plantId, month })
+  const salesRev = sales
+    .filter((s) => Number(s.plant_id) === Number(plantId) && monthOf(s.date) === month)
+    .reduce((sum, s) => sum + saleTotal(s), 0)
 
   const purchases = purchasesValue(materialTxns, materials, { plantId, month })
   const cf = inventoryValue(materialTxns, deliveries, materials, { plantId, uptoMonth: month })
@@ -197,11 +201,12 @@ export function monthCosting({ plantId, month, prevMonth, costingRow, pours, exp
     .filter((e) => monthOf(e.date) === month)
     .reduce((s, e) => s + num(e.amount_rm), 0)
 
+  const income = salesRev + transport
   return {
-    month, volume, price, claim, transport,
+    month, volume, price, productionValue, salesRev, transport,
     bf, purchases, cf, cogs, expense,
-    income: claim + transport,
-    netIncome: claim + transport - cogs - expense,
+    income,
+    netIncome: income - cogs - expense,
   }
 }
 

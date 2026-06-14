@@ -28,27 +28,24 @@ export default function Overview() {
     const days = productionDays(myPours)
     const totalExpense = myExpenses.reduce((s, e) => s + num(e.amount_rm), 0)
 
-    // claim + COGS aggregated per plant per active month
+    // COGS aggregated per plant per active month (priced material movement)
     const months = activeMonths({ pours: myPours, expenses: myExpenses, costing: myCosting, deliveries })
-    let claim = 0, cogs = 0
+    let cogs = 0
     for (const plantId of selectedPlantIds) {
-      const pPours = pours.filter((p) => Number(p.plant_id) === plantId)
-      const pExp = expenses.filter((e) => Number(e.plant_id) === plantId)
       const pTxns = materialTxns.filter((t) => Number(t.plant_id) === plantId)
       for (const month of months) {
-        const row = costing.find((c) => Number(c.plant_id) === plantId && c.month === month)
-        const m = monthCosting({
-          plantId, month, prevMonth: prevMonthOf(month), costingRow: row,
-          pours: pPours, expenses: pExp, materialTxns: pTxns, materials, deliveries,
-        })
-        claim += m.claim
-        cogs += m.cogs
+        cogs += monthCosting({
+          plantId, month, prevMonth: prevMonthOf(month),
+          pours: [], expenses: [], materialTxns: pTxns, materials, deliveries,
+        }).cogs
       }
     }
-    // transport income, netted: only deliveries leaving the current selection count
+    // income = concrete sales (Musyati + external) + internal-delivery transport.
+    // transport is netted: only deliveries leaving the current selection count.
+    const revenue = salesRevenue(mySales)
     const transport = sumDeliveryIncome(deliveries.filter((dl) =>
       selectedPlantIds.includes(Number(dl.from_plant_id)) && !selectedPlantIds.includes(Number(dl.to_plant_id))))
-    const netIncome = claim + transport - cogs - totalExpense
+    const netIncome = revenue + transport - cogs - totalExpense
 
     const account = allocate(mySales, myPayments)
 
@@ -76,11 +73,10 @@ export default function Overview() {
     return {
       production, days,
       avgDaily: days ? production / days : 0,
-      claim, totalExpense, netIncome,
-      revenue: salesRevenue(mySales),
+      totalExpense, netIncome, transport, cogs,
+      revenue,
       outstanding: account.outstanding,
       credit: account.credit,
-      avgClaimRate: production ? claim / production : 0,
       timeline, volumeByGrade, usage,
     }
   }, [sales, payments, pours, deliveries, expenses, costing, materials, materialTxns, grades, gradesById, inSelection, selectedPlantIds])
@@ -91,9 +87,9 @@ export default function Overview() {
         <KpiCard label="Total Production" value={fmtNum(d.production, 1)} sub="m³" color="text-teal-700" />
         <KpiCard label="Production Days" value={d.days} sub="active days" />
         <KpiCard label="Avg Daily" value={fmtNum(d.avgDaily, 1)} sub="m³ / day" color="text-amber-600" />
-        <KpiCard label="Claim Value" value={fmtRM(d.claim)} sub={`avg RM ${fmtNum(d.avgClaimRate)}/m³`} color="text-blue-800" />
-        <KpiCard label="Total Expenses" value={fmtRM(d.totalExpense)} sub="all recorded" color="text-red-700" />
-        <KpiCard label="Net Income" value={fmtRM(d.netIncome)} sub="claim + transport − COGS − expenses" color={d.netIncome < 0 ? 'text-red-700' : 'text-emerald-700'} />
+        <KpiCard label="Transport Income" value={fmtRM(d.transport)} sub="internal delivery trips" color="text-blue-800" />
+        <KpiCard label="Total Expenses" value={fmtRM(d.totalExpense + d.cogs)} sub="COGS + operating" color="text-red-700" />
+        <KpiCard label="Net Income" value={fmtRM(d.netIncome)} sub="sales + transport − COGS − exp." color={d.netIncome < 0 ? 'text-red-700' : 'text-emerald-700'} />
         <KpiCard label="Sales Revenue" value={fmtRM(d.revenue)} sub="concrete sales" color="text-blue-700" />
         <KpiCard label="Outstanding" value={fmtRM(d.outstanding)} sub={d.credit > 0 ? `RM ${fmtNum(d.credit)} credit held` : 'awaiting payment'} color={d.outstanding > 0 ? 'text-red-700' : 'text-emerald-700'} />
       </div>
