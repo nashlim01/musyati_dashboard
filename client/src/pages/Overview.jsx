@@ -9,7 +9,7 @@ import {
   monthCosting, activeMonths, prevMonthOf, sumDeliveryIncome, num, sumTxns,
 } from '../lib/calc.js'
 import { fmtRM, fmtNum, fmtDate } from '../lib/format.js'
-import { KpiCard, SectionCard, Empty } from '../components/ui.jsx'
+import { KpiCard, SectionCard, Empty, ExportButtons } from '../components/ui.jsx'
 
 const GRADE_COLORS = ['#0f766e', '#155e75', '#1e40af', '#7c3aed', '#be185d', '#b91c1c', '#c2410c', '#a16207', '#4d7c0f', '#374151']
 
@@ -83,6 +83,19 @@ export default function Overview() {
 
   return (
     <div className="space-y-5">
+      <div className="flex items-center justify-end">
+        <ExportButtons filename="overview-volume-by-grade" label="Export summary" build={() => ({
+          title: 'Production Volume by Grade',
+          meta: [
+            `Total production: ${fmtNum(d.production, 1)} m³ over ${d.days} days`,
+            `Sales revenue ${fmtRM(d.revenue)} · Net income ${fmtRM(d.netIncome)} · Outstanding ${fmtRM(d.outstanding)}`,
+          ],
+          columns: [
+            { header: 'Grade', value: (g) => g.name },
+            { header: 'Volume (m³)', align: 'right', value: (g) => g.volume, text: (g) => fmtNum(g.volume, 1) },
+          ], rows: d.volumeByGrade,
+        })} />
+      </div>
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
         <KpiCard label="Total Production" value={fmtNum(d.production, 1)} sub="m³" color="text-teal-700" />
         <KpiCard label="Production Days" value={d.days} sub="active days" />

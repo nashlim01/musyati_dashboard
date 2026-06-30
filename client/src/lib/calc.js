@@ -11,22 +11,23 @@ export const saleTotal = (s) =>
 export const monthOf = (dateStr) => String(dateStr ?? '').slice(0, 7)
 
 // ---------------------------------------------------------------------------
-// Company account model
-// Payments add funds; orders (Sales) draw them down. A company's funds pay its
-// orders oldest-first (FIFO). Surplus funds are credit; shortfall is outstanding.
+// Company account model (single pooled ledger)
+// Every payment — cash-in or reload-credit alike — goes into one pool that clears
+// the company's earliest unpaid orders first (FIFO). Only once everything is
+// settled does the surplus become Credit Balance (prepaid for upcoming orders);
+// a shortfall is Outstanding/overdue. Per-sale status is simply Paid or Unpaid.
+// `method` (cash | reload) is recorded on the payment for reference only.
 // ---------------------------------------------------------------------------
+export const payIsReload = (p) => p.method === 'reload'
 
-// FIFO-match one company's payments to its orders. Returns per-sale settlement
-// plus account totals and amount-weighted collection days.
+const byDateThenId = (a, b) => String(a.date).localeCompare(String(b.date)) || a.id - b.id
+
+// FIFO-match one company's payments to its orders, oldest-first.
 function matchCompany(sales, payments) {
-  const orders = [...sales].sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.id - b.id)
-    .map((s) => ({ sale: s, total: saleTotal(s), remaining: saleTotal(s) }))
-  const pays = [...payments].sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.id - b.id)
-    .map((p) => ({ pay: p, remaining: num(p.amount_rm) }))
+  const orders = sales.slice().sort(byDateThenId).map((s) => ({ sale: s, total: saleTotal(s), remaining: saleTotal(s) }))
+  const pays = payments.slice().sort(byDateThenId).map((p) => ({ pay: p, remaining: num(p.amount_rm) }))
 
-  let weightedDays = 0
-  let settled = 0
-  let oi = 0
+  let weightedDays = 0, settled = 0, oi = 0
   for (const p of pays) {
     while (p.remaining > 0.0001 && oi < orders.length) {
       const o = orders[oi]
@@ -34,24 +35,26 @@ function matchCompany(sales, payments) {
       o.remaining -= take
       p.remaining -= take
       settled += take
-      const days = Math.max(0,
-        (new Date(`${p.pay.date}T00:00:00`) - new Date(`${o.sale.date}T00:00:00`)) / 86400000)
+      const days = Math.max(0, (new Date(`${p.pay.date}T00:00:00`) - new Date(`${o.sale.date}T00:00:00`)) / 86400000)
       if (Number.isFinite(days)) weightedDays += take * days
       if (o.remaining <= 0.0001) oi++
     }
   }
-  const funds = pays.reduce((s, p) => s + num(p.pay.amount_rm), 0)
-  const ordersTotal = orders.reduce((s, o) => s + o.total, 0)
+
   const statusById = new Map()
   const paidById = new Map()
   for (const o of orders) {
-    const paid = o.total - o.remaining
-    paidById.set(o.sale.id, paid)
-    statusById.set(o.sale.id, o.remaining <= 0.005 ? 'paid' : paid > 0.005 ? 'partial' : 'unpaid')
+    paidById.set(o.sale.id, o.total - o.remaining)
+    statusById.set(o.sale.id, o.remaining <= 0.005 ? 'paid' : 'unpaid')
   }
+
+  const funds = pays.reduce((s, p) => s + num(p.pay.amount_rm), 0)
+  const ordersTotal = orders.reduce((s, o) => s + o.total, 0)
+  const balance = funds - ordersTotal // positive = credit, negative = outstanding
   return {
-    funds, orders: ordersTotal, balance: funds - ordersTotal,
-    settled, weightedDays, statusById, paidById,
+    funds, ordersTotal, balance,
+    outstanding: Math.max(0, -balance), credit: Math.max(0, balance),
+    statusById, paidById, settled, weightedDays,
   }
 }
 
@@ -68,12 +71,12 @@ export function allocate(sales, payments) {
   let collected = 0, outstanding = 0, credit = 0, weightedDays = 0, settled = 0
   for (const [c, grp] of byCo) {
     const m = matchCompany(grp.sales, grp.payments)
-    account.set(c, { funds: m.funds, orders: m.orders, balance: m.balance })
+    account.set(c, { funds: m.funds, ordersTotal: m.ordersTotal, balance: m.balance, outstanding: m.outstanding, credit: m.credit })
     for (const [id, st] of m.statusById) statusById.set(id, st)
     for (const [id, amt] of m.paidById) paidById.set(id, amt)
     collected += m.settled
-    outstanding += Math.max(0, -m.balance)
-    credit += Math.max(0, m.balance)
+    outstanding += m.outstanding
+    credit += m.credit
     weightedDays += m.weightedDays
     settled += m.settled
   }
@@ -84,29 +87,37 @@ export function allocate(sales, payments) {
   }
 }
 
-// Account for a single company (funds in − orders out)
+// Account for a single company.
 export function companyAccount(companyId, sales, payments) {
-  const funds = payments.filter((p) => Number(p.company_id) === Number(companyId))
-    .reduce((s, p) => s + num(p.amount_rm), 0)
-  const orders = sales.filter((s) => Number(s.company_id) === Number(companyId))
-    .reduce((s, x) => s + saleTotal(x), 0)
-  const balance = funds - orders
-  return { funds, orders, balance, credit: Math.max(0, balance), outstanding: Math.max(0, -balance) }
+  const cs = sales.filter((s) => Number(s.company_id) === Number(companyId))
+  const cp = payments.filter((p) => Number(p.company_id) === Number(companyId))
+  const m = matchCompany(cs, cp)
+  return { funds: m.funds, orders: m.ordersTotal, balance: m.balance, outstanding: m.outstanding, credit: m.credit }
 }
 
-// Dated ledger for one company: orders vs payments with a running balance.
+// Dated ledger for one company: cash-in and reload-in shown separately, with a
+// single running balance (negative = outstanding/overdue, positive = credit).
 export function buildLedger(sales, payments) {
   const byDate = new Map()
-  const add = (date, field, amount) => {
-    if (!date) return
-    if (!byDate.has(date)) byDate.set(date, { date, cashIn: 0, order: 0 })
-    byDate.get(date)[field] += amount
+  const ensure = (date) => {
+    if (!byDate.has(date)) byDate.set(date, { date, cashIn: 0, reloadIn: 0, order: 0, files: [] })
+    return byDate.get(date)
   }
-  for (const s of sales) add(s.date, 'order', saleTotal(s))
-  for (const p of payments) add(p.date, 'cashIn', num(p.amount_rm))
+  for (const s of sales) { if (s.date) ensure(s.date).order += saleTotal(s) }
+  for (const p of payments) {
+    if (!p.date) continue
+    const r = ensure(p.date)
+    if (payIsReload(p)) r.reloadIn += num(p.amount_rm); else r.cashIn += num(p.amount_rm)
+    // attachment links (bank slips) recorded against the payment
+    String(p.attachments ?? '').split(';').map((t) => t.trim()).filter(Boolean)
+      .forEach((name) => r.files.push({ id: p.id, name }))
+  }
   const rows = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date))
   let balance = 0
-  for (const r of rows) { balance += r.cashIn - r.order; r.balance = balance }
+  for (const r of rows) {
+    balance += r.cashIn + r.reloadIn - r.order
+    r.balance = balance
+  }
   return rows
 }
 

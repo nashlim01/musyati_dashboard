@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useData } from '../lib/data.jsx'
 import { num, monthOf, monthCosting, totalProduction, prevMonthOf, deliveryIncome, saleTotal } from '../lib/calc.js'
-import { fmtRM, fmtNum } from '../lib/format.js'
+import { fmtRM, fmtNum, fmtMonth } from '../lib/format.js'
+import { ExportButtons } from '../components/ui.jsx'
 
 // costing cells show nothing at all when the value is zero
 const rm = (v) => (v === 0 ? '' : fmtRM(v))
@@ -89,6 +90,23 @@ export default function Costing() {
           {years.map((y) => <option key={y} value={y}>{y}</option>)}
         </select>
         <span className="text-xs text-neutral-400">Income = concrete sales + internal-delivery transport. COGS is computed from priced material movement; everything here is calculated.</span>
+        <div className="flex-1" />
+        <ExportButtons filename={`costing-${year}`} build={() => ({
+          title: `Costing Statement ${year}`, subtitle: `Year ${year}`,
+          columns: [
+            { header: 'Month', value: (c) => fmtMonth(c.month) },
+            { header: 'Volume (m³)', align: 'right', value: (c) => c.volume, text: (c) => fmtNum(c.volume, 1) },
+            { header: 'Concrete Sales (RM)', align: 'right', value: (c) => c.salesRev, text: (c) => fmtNum(c.salesRev) },
+            { header: 'Transport (RM)', align: 'right', value: (c) => c.transport, text: (c) => fmtNum(c.transport) },
+            { header: 'Total Income (RM)', align: 'right', value: (c) => c.income, text: (c) => fmtNum(c.income) },
+            { header: 'Inventory B/F (RM)', align: 'right', value: (c) => c.bf, text: (c) => fmtNum(c.bf) },
+            { header: 'Purchases (RM)', align: 'right', value: (c) => c.purchases, text: (c) => fmtNum(c.purchases) },
+            { header: 'Inventory C/F (RM)', align: 'right', value: (c) => c.cf, text: (c) => fmtNum(c.cf) },
+            { header: 'COGS (RM)', align: 'right', value: (c) => c.cogs, text: (c) => fmtNum(c.cogs) },
+            { header: 'Total Expenses (RM)', align: 'right', value: (c) => c.expense, text: (c) => fmtNum(c.expense) },
+            { header: 'Net Income (RM)', align: 'right', value: (c) => c.netIncome, text: (c) => fmtNum(c.netIncome) },
+          ], rows: model.cols,
+        })} />
       </div>
 
       <div className="card overflow-x-auto">

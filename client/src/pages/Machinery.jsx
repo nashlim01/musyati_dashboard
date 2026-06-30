@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useData } from '../lib/data.jsx'
 import { num } from '../lib/calc.js'
 import { fmtRM, fmtDate, todayISO } from '../lib/format.js'
-import { Modal, Field, SectionCard, Empty, ConfirmDelete, KpiCard } from '../components/ui.jsx'
+import { Modal, Field, SectionCard, Empty, ConfirmDelete, KpiCard, ExportButtons } from '../components/ui.jsx'
 
 const STATUS = {
   active: ['Active', 'bg-emerald-100 text-emerald-700'],
@@ -34,11 +34,16 @@ export default function Machinery() {
     cost: myRecords.reduce((s, r) => s + num(r.cost_rm), 0),
   }), [myMachines, myRecords])
 
-  const upcoming = useMemo(() => myRecords
-    .filter((r) => r.next_service_date && r.next_service_date >= todayISO())
-    .sort((a, b) => String(a.next_service_date).localeCompare(String(b.next_service_date)))
-    .slice(0, 5),
-  [myRecords])
+  // maintenance cost grouped by machine — keeps the page focused on spend
+  const costByMachine = useMemo(() => {
+    const map = new Map()
+    for (const r of myRecords) {
+      const id = Number(r.machine_id)
+      if (!map.has(id)) map.set(id, { name: machinesById[id]?.name ?? '?', cost: 0, count: 0 })
+      const e = map.get(id); e.cost += num(r.cost_rm); e.count += 1
+    }
+    return [...map.values()].sort((a, b) => b.cost - a.cost)
+  }, [myRecords, machinesById])
 
   return (
     <div className="space-y-5">
@@ -55,11 +60,24 @@ export default function Machinery() {
           plant_id: selectedPlantIds[0], name: '', type: '', reg_no: '', status: 'active', remarks: '',
         })}>+ Add Machine</button>
         <button className="btn-dark" onClick={() => setEditingRecord({
-          machine_id: '', date: todayISO(), type: 'service', description: '', cost_rm: '', next_service_date: '', remarks: '',
+          machine_id: '', date: todayISO(), type: 'service', description: '', cost_rm: '', remarks: '',
         })}>+ Add Maintenance Record</button>
       </div>
 
-      <SectionCard title="Machines" right={<span className="mono text-xs text-neutral-400">{myMachines.length} machines</span>}>
+      <SectionCard title="Machines" right={
+        <div className="flex items-center gap-3">
+          <ExportButtons filename="machines" build={() => ({
+            title: 'Machines', columns: [
+              { header: 'Machine', value: (m) => m.name },
+              { header: 'Type', value: (m) => m.type },
+              { header: 'Reg No.', value: (m) => m.reg_no },
+              { header: 'Plant', value: (m) => plantsById[m.plant_id]?.name ?? '' },
+              { header: 'Status', value: (m) => STATUS[m.status]?.[0] ?? m.status },
+              { header: 'Remarks', value: (m) => m.remarks },
+            ], rows: myMachines })} />
+          <span className="mono text-xs text-neutral-400">{myMachines.length} machines</span>
+        </div>
+      }>
         <div className="table-scroll"><table className="w-full">
           <thead>
             <tr>{['Machine', 'Type', 'Reg No.', 'Plant', 'Status', 'Remarks', 'Actions'].map((h) => <th key={h} className="th">{h}</th>)}</tr>
@@ -88,10 +106,26 @@ export default function Machinery() {
       </SectionCard>
 
       <div className="grid xl:grid-cols-3 gap-5">
-        <SectionCard title="Maintenance Log" className="xl:col-span-2" right={<span className="mono text-xs text-neutral-400">{myRecords.length} records</span>}>
+        <SectionCard title="Maintenance Log" className="xl:col-span-2" right={
+          <div className="flex items-center gap-3">
+            <ExportButtons filename="maintenance-log" build={() => ({
+              title: 'Maintenance Log',
+              subtitle: `${myRecords.length} records · total ${fmtRM(kpi.cost)}`,
+              meta: [`Total maintenance cost: ${fmtRM(kpi.cost)}`],
+              columns: [
+                { header: 'Date', value: (r) => r.date, text: (r) => fmtDate(r.date) },
+                { header: 'Machine', value: (r) => machinesById[r.machine_id]?.name ?? '?' },
+                { header: 'Type', value: (r) => MTYPE[r.type] ?? r.type },
+                { header: 'Description', value: (r) => r.description },
+                { header: 'Cost (RM)', align: 'right', value: (r) => num(r.cost_rm), text: (r) => fmtRM(r.cost_rm) },
+                { header: 'Remarks', value: (r) => r.remarks },
+              ], rows: myRecords })} />
+            <span className="mono text-xs text-neutral-400">{myRecords.length} records</span>
+          </div>
+        }>
           <div className="table-scroll"><table className="w-full">
             <thead>
-              <tr>{['Date', 'Machine', 'Type', 'Description', 'Cost (RM)', 'Next Service', 'Actions'].map((h) => <th key={h} className="th">{h}</th>)}</tr>
+              <tr>{['Date', 'Machine', 'Type', 'Description', 'Cost (RM)', 'Actions'].map((h, i) => <th key={h} className={`th ${i === 4 ? 'text-right' : ''}`}>{h}</th>)}</tr>
             </thead>
             <tbody>
               {myRecords.map((r) => (
@@ -101,7 +135,6 @@ export default function Machinery() {
                   <td className="td text-xs font-semibold">{MTYPE[r.type] ?? r.type}</td>
                   <td className="td text-xs text-neutral-600">{r.description}</td>
                   <td className="td text-right">{fmtRM(r.cost_rm)}</td>
-                  <td className="td whitespace-nowrap text-xs">{r.next_service_date ? fmtDate(r.next_service_date) : '—'}</td>
                   <td className="td whitespace-nowrap">
                     <button className="text-neutral-500 hover:text-neutral-900 text-xs font-medium mr-3 cursor-pointer" onClick={() => setEditingRecord({ ...r })}>Edit</button>
                     <ConfirmDelete onConfirm={() => data.remove('maintenance', r.id)} />
@@ -113,15 +146,22 @@ export default function Machinery() {
           {myRecords.length === 0 && <Empty>No maintenance records</Empty>}
         </SectionCard>
 
-        <SectionCard title="Upcoming Services">
-          {upcoming.length === 0 ? <Empty>Nothing scheduled</Empty> : (
+        <SectionCard title="Maintenance Cost by Machine">
+          {costByMachine.length === 0 ? <Empty>No maintenance cost yet</Empty> : (
             <div className="space-y-2">
-              {upcoming.map((r) => (
-                <div key={r.id} className="border border-neutral-200 rounded-md px-3 py-2">
-                  <div className="text-sm font-medium">{machinesById[r.machine_id]?.name}</div>
-                  <div className="text-xs text-neutral-500">{fmtDate(r.next_service_date)} · {MTYPE[r.type] ?? r.type}</div>
+              {costByMachine.map((m) => (
+                <div key={m.name} className="flex items-center justify-between border border-neutral-200 rounded-md px-3 py-2">
+                  <div>
+                    <div className="text-sm font-medium">{m.name}</div>
+                    <div className="text-xs text-neutral-400">{m.count} record{m.count !== 1 ? 's' : ''}</div>
+                  </div>
+                  <div className="text-sm font-bold text-red-700">{fmtRM(m.cost)}</div>
                 </div>
               ))}
+              <div className="flex items-center justify-between pt-2 mt-1 border-t border-neutral-200">
+                <span className="label">Total</span>
+                <span className="text-sm font-extrabold">{fmtRM(kpi.cost)}</span>
+              </div>
             </div>
           )}
         </SectionCard>
@@ -212,7 +252,6 @@ function RecordModal({ form, machines, onClose }) {
           </select>
         </Field>
         <Field label="Cost (RM)"><input type="number" step="0.01" className="input w-full" value={f.cost_rm} onChange={set('cost_rm')} /></Field>
-        <Field label="Next Service Date"><input type="date" className="input w-full" value={f.next_service_date} onChange={set('next_service_date')} /></Field>
         <Field label="Remarks"><input className="input w-full" value={f.remarks} onChange={set('remarks')} /></Field>
         <Field label="Description" span2><input className="input w-full" value={f.description} onChange={set('description')} /></Field>
       </div>

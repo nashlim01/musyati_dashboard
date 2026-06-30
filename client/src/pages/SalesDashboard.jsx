@@ -9,26 +9,9 @@ import {
   monthOf, num, totalProduction,
 } from '../lib/calc.js'
 import { fmtRM, fmtNum, fmtMonth, todayISO } from '../lib/format.js'
-import { SectionCard, Empty, KpiCard } from '../components/ui.jsx'
+import { SectionCard, Empty, KpiCard, ExportButtons } from '../components/ui.jsx'
 
 const COLORS = ['#0f766e', '#1e40af', '#be185d', '#c2410c', '#7c3aed', '#a16207']
-
-const addMonths = (ym, n) => {
-  const [y, m] = ym.split('-').map(Number)
-  const d = new Date(y, m - 1 + n, 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
-function project(values, ahead) {
-  const n = values.length
-  if (n < 2) return Array(ahead).fill(values[n - 1] ?? 0)
-  const xm = (n - 1) / 2
-  const ym = values.reduce((a, b) => a + b, 0) / n
-  let cov = 0, varx = 0
-  values.forEach((v, i) => { cov += (i - xm) * (v - ym); varx += (i - xm) ** 2 })
-  const slope = cov / varx
-  return Array.from({ length: ahead }, (_, k) => Math.max(0, ym + slope * (n + k - xm)))
-}
 
 export default function SalesDashboard() {
   const {
@@ -47,7 +30,6 @@ export default function SalesDashboard() {
     const myDeliveries = deliveries.filter((dl) =>
       selectedPlantIds.includes(Number(dl.from_plant_id)) && !selectedPlantIds.includes(Number(dl.to_plant_id)))
     const today = todayISO()
-    const currentMonth = monthOf(today)
 
     const account = allocate(mySales, myPayments)
 
@@ -89,33 +71,8 @@ export default function SalesDashboard() {
       }
     })
 
-    // revenue projection
-    const complete = rows.filter((r) => r.month < currentMonth)
-    const partial = rows.find((r) => r.month === currentMonth)
-    const series = complete.map((r) => r.income)
-    let projection = []
-    if (series.length >= 2) {
-      const lastActual = partial ?? complete[complete.length - 1]
-      const points = []
-      if (partial) {
-        const [y, m] = currentMonth.split('-').map(Number)
-        const daysInMonth = new Date(y, m, 0).getDate()
-        const dayOfMonth = Number(today.slice(8, 10))
-        points.push({ month: currentMonth, value: (partial.income / dayOfMonth) * daysInMonth })
-      }
-      const trend = project(series, partial ? 2 : 3)
-      trend.forEach((v, i) => points.push({ month: addMonths(currentMonth, (partial ? 1 : 0) + i), value: v }))
-      projection = points
-      projection.unshift({ month: lastActual.month, value: lastActual.income, anchor: true })
-    }
-    const projChart = [...rows.map((r) => ({ label: fmtMonth(r.month), month: r.month, actual: r.income }))]
-    for (const p of projection) {
-      const hit = projChart.find((r) => r.month === p.month)
-      if (hit) hit.projected = p.value
-      else projChart.push({ label: `${fmtMonth(p.month)} •`, month: p.month, projected: p.value })
-    }
-    projChart.sort((a, b) => a.month.localeCompare(b.month))
-    const next3 = projection.filter((p) => !p.anchor).reduce((t, p) => t + p.value, 0)
+    // monthly income trend (actuals only)
+    const trendChart = rows.map((r) => ({ label: fmtMonth(r.month), month: r.month, income: r.income }))
 
     // receivables aging: each sale's unpaid remainder bucketed by its own age
     const aging = new Map()
@@ -147,7 +104,7 @@ export default function SalesDashboard() {
     }
     for (const c of byCompany.values()) {
       const a = account.account.get(c.id)
-      c.outstanding = a ? Math.max(0, -a.balance) : 0
+      c.outstanding = a ? a.outstanding : 0
     }
     const companyRows = [...byCompany.values()].filter((c) => c.value > 0).sort((a, b) => b.value - a.value)
     // own company "Musyati" vs everyone else (external customers)
@@ -171,7 +128,7 @@ export default function SalesDashboard() {
     const totSales = rows.reduce((t, r) => t + r.salesRev, 0)
 
     return {
-      rows, projChart, next3, agingRows, dso: account.dso, unitRows, companyRows, gradeRows,
+      rows, trendChart, agingRows, dso: account.dso, unitRows, companyRows, gradeRows,
       musyatiTotal, externalSalesTotal, externalRows,
       totIncome, totCost,
       profit: totIncome - totCost,
@@ -192,6 +149,25 @@ export default function SalesDashboard() {
 
   return (
     <div className="space-y-5">
+      <div className="flex items-center justify-end">
+        <ExportButtons filename="sales-dashboard" label="Export monthly data" build={() => ({
+          title: 'Monthly Financial Performance',
+          subtitle: `Income ${fmtRM(d.totIncome)} · Profit ${fmtRM(d.profit)} · Margin ${fmtNum(d.margin, 1)}%`,
+          meta: [`Total income ${fmtRM(d.totIncome)} · Profit ${fmtRM(d.profit)} · Margin ${fmtNum(d.margin, 1)}%`],
+          columns: [
+            { header: 'Month', value: (r) => r.label },
+            { header: 'Concrete Sales (RM)', align: 'right', value: (r) => r.salesRev, text: (r) => fmtNum(r.salesRev) },
+            { header: 'Transport (RM)', align: 'right', value: (r) => r.transport, text: (r) => fmtNum(r.transport) },
+            { header: 'Income (RM)', align: 'right', value: (r) => r.income, text: (r) => fmtNum(r.income) },
+            { header: 'COGS (RM)', align: 'right', value: (r) => r.cogs, text: (r) => fmtNum(r.cogs) },
+            { header: 'Expenses (RM)', align: 'right', value: (r) => r.expense, text: (r) => fmtNum(r.expense) },
+            { header: 'Total Cost (RM)', align: 'right', value: (r) => r.cost, text: (r) => fmtNum(r.cost) },
+            { header: 'Profit (RM)', align: 'right', value: (r) => r.profit, text: (r) => fmtNum(r.profit) },
+            { header: 'Production (m³)', align: 'right', value: (r) => r.volume, text: (r) => fmtNum(r.volume) },
+            { header: 'Collected (RM)', align: 'right', value: (r) => r.collected, text: (r) => fmtNum(r.collected) },
+          ], rows: d.rows,
+        })} />
+      </div>
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         <KpiCard label="Total Income" value={fmtRM(d.totIncome)} sub="sales + transport" color="text-blue-800" />
         <KpiCard label="Profit" value={fmtRM(d.profit)} sub="income − COGS − expenses" color={d.profit < 0 ? 'text-red-700' : 'text-emerald-700'} />
@@ -221,20 +197,19 @@ export default function SalesDashboard() {
       </SectionCard>
 
       <div className="grid lg:grid-cols-2 gap-5">
-        <SectionCard title="Revenue Trend & Projection" right={<span className="mono text-xs text-neutral-400">next 3 months ≈ {fmtRM(d.next3)}</span>}>
+        <SectionCard title="Monthly Income Trend">
           {!hasData ? <Empty /> : (
             <ResponsiveContainer width="100%" height={280}>
-              <ComposedChart data={d.projChart} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
+              <BarChart data={d.trendChart} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
                 <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-                <Tooltip formatter={(v, name) => [fmtRM(v), name === 'actual' ? 'Income' : 'Projected (trend)']} />
-                <Bar dataKey="actual" fill="#1e40af" radius={[4, 4, 0, 0]} />
-                <Line type="monotone" dataKey="projected" stroke="#7c3aed" strokeWidth={2.5} strokeDasharray="6 4" dot={{ r: 3 }} connectNulls />
-              </ComposedChart>
+                <Tooltip formatter={(v) => [fmtRM(v), 'Income']} />
+                <Bar dataKey="income" fill="#1e40af" radius={[4, 4, 0, 0]} />
+              </BarChart>
             </ResponsiveContainer>
           )}
-          <p className="text-[11px] text-neutral-400 mt-1">Dashed line = least-squares trend of monthly income; the current month is projected from its daily run-rate.</p>
+          <p className="text-[11px] text-neutral-400 mt-1">Income = concrete sales + internal-delivery transport, per month.</p>
         </SectionCard>
 
         <SectionCard title="Cashflow — Billed vs Collected">

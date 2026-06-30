@@ -231,7 +231,44 @@ app.delete('/api/sales/:id/attachments/:filename', (req, res) => {
   res.json(listAttachments(req.params.id))
 })
 
-// serves the actual files, e.g. /api/files/sale-3/DO-12345.pdf
+// --- Payment attachments (bank slips, transfer proof) — stored under payment-<id> ---
+const paymentDir = (id) => path.join(ATTACH_DIR, `payment-${Number(id)}`)
+const listPaymentFiles = (id) =>
+  fs.existsSync(paymentDir(id)) ? fs.readdirSync(paymentDir(id)).filter((f) => !f.startsWith('.')) : []
+const syncPaymentFiles = (id) => db.update('Payments', id, { attachments: listPaymentFiles(id).join('; ') })
+
+const uploadPayment = multer({
+  storage: multer.diskStorage({
+    destination: (req, _file, cb) => {
+      const dir = paymentDir(req.params.id)
+      fs.mkdirSync(dir, { recursive: true })
+      cb(null, dir)
+    },
+    filename: (_req, file, cb) => cb(null, file.originalname.replace(/[^\w.\- ()]/g, '_')),
+  }),
+  limits: { fileSize: 25 * 1024 * 1024 },
+})
+
+app.get('/api/payments/:id/attachments', (req, res) => res.json(listPaymentFiles(req.params.id)))
+
+app.post('/api/payments/:id/attachments', (req, res) => {
+  if (!db.getById('Payments', req.params.id)) return res.status(404).json({ error: 'Payment not found' })
+  uploadPayment.array('files')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message })
+    syncPaymentFiles(req.params.id)
+    res.json(listPaymentFiles(req.params.id))
+  })
+})
+
+app.delete('/api/payments/:id/attachments/:filename', (req, res) => {
+  const file = path.join(paymentDir(req.params.id), path.basename(req.params.filename))
+  if (!fs.existsSync(file)) return res.status(404).json({ error: 'File not found' })
+  fs.unlinkSync(file)
+  syncPaymentFiles(req.params.id)
+  res.json(listPaymentFiles(req.params.id))
+})
+
+// serves the actual files, e.g. /api/files/sale-3/DO-12345.pdf or /api/files/payment-5/slip.pdf
 app.use('/api/files', express.static(ATTACH_DIR))
 
 for (const [key, cfg] of Object.entries(RESOURCES)) {

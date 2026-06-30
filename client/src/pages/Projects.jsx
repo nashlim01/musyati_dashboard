@@ -6,7 +6,7 @@ import {
 import { useData } from '../lib/data.jsx'
 import { num, saleTotal } from '../lib/calc.js'
 import { fmtRM, fmtNum, fmtDate, todayISO } from '../lib/format.js'
-import { Modal, Field, SectionCard, Empty, ConfirmDelete, KpiCard } from '../components/ui.jsx'
+import { Modal, Field, SectionCard, Empty, ConfirmDelete, KpiCard, ExportButtons } from '../components/ui.jsx'
 
 const TYPES = ['Bridge', 'Road', 'Drainage', 'Building', 'Maintenance', 'Earthworks', 'Other']
 const STATUS = {
@@ -126,6 +126,25 @@ export default function Projects() {
 
   return (
     <div className="space-y-5">
+      <div className="flex items-center justify-end">
+        <ExportButtons filename="projects" label="Export portfolio" build={() => ({
+          title: 'Project Portfolio',
+          subtitle: `${kpi.total} projects · value ${fmtRM(kpi.value)} · ${fmtNum(kpi.weighted, 1)}% complete`,
+          meta: [`Portfolio value ${fmtRM(kpi.value)} · Earned ${fmtRM(kpi.earned)} · Overall ${fmtNum(kpi.weighted, 1)}%`],
+          columns: [
+            { header: 'Code', value: (a) => a.project.code },
+            { header: 'Name', value: (a) => a.project.name },
+            { header: 'Type', value: (a) => a.project.type },
+            { header: 'Client', value: (a) => a.project.client },
+            { header: 'Status', value: (a) => STATUS[a.project.status]?.[0] ?? a.project.status },
+            { header: 'Health', value: (a) => HEALTH[a.health]?.[0] ?? '' },
+            { header: 'Contract Value (RM)', align: 'right', value: (a) => a.value, text: (a) => fmtNum(a.value) },
+            { header: 'Progress %', align: 'right', value: (a) => a.progress, text: (a) => fmtNum(a.progress, 0) },
+            { header: 'Earned Value (RM)', align: 'right', value: (a) => a.earned, text: (a) => fmtNum(a.earned) },
+            { header: 'Days Left', align: 'right', value: (a) => a.daysLeft ?? '', text: (a) => a.daysLeft == null ? '' : String(a.daysLeft) },
+          ], rows: analysed,
+        })} />
+      </div>
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         <KpiCard label="Projects" value={kpi.total} sub={`${kpi.active} active`} />
         <KpiCard label="Portfolio Value" value={fmtRM(kpi.value)} sub="total contract sum" color="text-blue-800" />

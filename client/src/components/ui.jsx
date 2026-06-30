@@ -1,4 +1,30 @@
 import { useEffect } from 'react'
+import { exportExcel, exportPDF } from '../lib/export.js'
+
+// Excel + PDF buttons for a single dataset. `build()` returns
+// { title, subtitle?, columns, rows, meta? } so data is gathered lazily on click.
+export function ExportButtons({ build, filename, label = 'Export', disabled = false }) {
+  const run = (fn) => () => {
+    const d = build()
+    if (!d || !d.rows?.length) { alert('Nothing to export.'); return }
+    fn(d)
+  }
+  const toExcel = run((d) => exportExcel(filename, { name: d.title, columns: d.columns, rows: d.rows }))
+  const toPDF = run((d) => exportPDF(filename, d))
+  return (
+    <div className="inline-flex items-center rounded-md border border-neutral-300 overflow-hidden">
+      <span className="text-[11px] text-neutral-400 px-2 hidden sm:inline">{label}</span>
+      <button
+        className="text-xs px-2.5 py-1 hover:bg-neutral-100 border-l border-neutral-300 cursor-pointer disabled:opacity-40 disabled:cursor-default"
+        onClick={toExcel} disabled={disabled} title="Export to Excel"
+      >⬇ Excel</button>
+      <button
+        className="text-xs px-2.5 py-1 hover:bg-neutral-100 border-l border-neutral-300 cursor-pointer disabled:opacity-40 disabled:cursor-default"
+        onClick={toPDF} disabled={disabled} title="Export to PDF"
+      >⬇ PDF</button>
+    </div>
+  )
+}
 
 export function Modal({ title, onClose, children, wide = false }) {
   useEffect(() => {

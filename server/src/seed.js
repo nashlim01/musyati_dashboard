@@ -97,7 +97,10 @@ const EXPENSES = [
 ]
 
 export function buildSeedData() {
-  const plants = [{ id: 1, name: 'Plant A — Medamit', location: 'Medamit Batching Plant', active: 1, trip_rate_rm: 100 }]
+  const plants = [
+    { id: 1, name: 'Plant A — Medamit', location: 'Medamit Batching Plant', active: 1, trip_rate_rm: 100, type: 'batching' },
+    { id: 2, name: 'Premix Plant', location: '', active: 1, trip_rate_rm: 0, type: 'premix' },
+  ]
   const companies = [{ id: 1, name: 'KKSB' }]
   const grades = GRADES.map((g, i) => ({ id: i + 1, ...g }))
   const materials = MATERIALS.map((m, i) => ({ id: i + 1, ...m }))

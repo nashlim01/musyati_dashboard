@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useData } from '../lib/data.jsx'
 import { num, materialBalance, sumTxns } from '../lib/calc.js'
 import { fmtNum, fmtRM, fmtDate, todayISO } from '../lib/format.js'
-import { Modal, Field, SectionCard, Empty, ConfirmDelete } from '../components/ui.jsx'
+import { Modal, Field, SectionCard, Empty, ConfirmDelete, ExportButtons } from '../components/ui.jsx'
 
 const TYPE_LABEL = { usage: 'Usage', received: 'Received', transfer_out: 'Transfer Out' }
 const TYPE_COLOR = { usage: 'text-red-600', received: 'text-emerald-700', transfer_out: 'text-amber-600' }
@@ -45,7 +45,23 @@ export default function Materials() {
 
       <SectionCard
         title="Materials Balance"
-        right={<span className="mono text-xs text-neutral-400">Stock value {fmtRM(totalValue)}</span>}
+        right={
+          <div className="flex items-center gap-3">
+            <ExportButtons filename="materials-balance" build={() => ({
+              title: 'Materials Balance', subtitle: `Stock value ${fmtRM(totalValue)}`,
+              meta: [`Total stock value: ${fmtRM(totalValue)}`],
+              columns: [
+                { header: 'Material', value: (r) => r.material.name },
+                { header: 'Unit', value: (r) => r.material.unit },
+                { header: 'Unit Price (RM)', align: 'right', value: (r) => num(r.material.unit_price_rm), text: (r) => fmtRM(r.material.unit_price_rm) },
+                { header: 'Received', align: 'right', value: (r) => r.received, text: (r) => fmtNum(r.received) },
+                { header: 'Usage', align: 'right', value: (r) => r.usage, text: (r) => fmtNum(r.usage) },
+                { header: 'Current Balance', align: 'right', value: (r) => r.balance, text: (r) => fmtNum(r.balance) },
+                { header: 'Stock Value (RM)', align: 'right', value: (r) => r.value, text: (r) => fmtRM(r.value) },
+              ], rows: summary })} />
+            <span className="mono text-xs text-neutral-400">Stock value {fmtRM(totalValue)}</span>
+          </div>
+        }
       >
         {summary.length === 0 ? <Empty>No materials defined</Empty> : (
           <table className="w-full">
@@ -75,7 +91,21 @@ export default function Materials() {
 
       <SectionCard
         title="Material Transactions"
-        right={<span className="mono text-xs text-neutral-400">{sortedTxns.length} records</span>}
+        right={
+          <div className="flex items-center gap-3">
+            <ExportButtons filename="material-transactions" build={() => ({
+              title: 'Material Transactions',
+              columns: [
+                { header: 'Date', value: (t) => t.date, text: (t) => fmtDate(t.date) },
+                { header: 'Material', value: (t) => materialsById[t.material_id]?.name ?? '?' },
+                { header: 'Plant', value: (t) => plantsById[t.plant_id]?.name ?? '' },
+                { header: 'Type', value: (t) => TYPE_LABEL[t.type] ?? t.type },
+                { header: 'Qty', align: 'right', value: (t) => num(t.qty_tonnes) },
+                { header: 'Remarks', value: (t) => t.remarks },
+              ], rows: sortedTxns })} />
+            <span className="mono text-xs text-neutral-400">{sortedTxns.length} records</span>
+          </div>
+        }
       >
         <div className="table-scroll"><table className="w-full">
           <thead>

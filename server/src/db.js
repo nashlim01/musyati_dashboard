@@ -14,7 +14,8 @@ const MAX_BACKUPS = 30
 // every sheet is a table, every row has an integer `id`,
 // and *_id columns are foreign keys into other sheets.
 export const SCHEMA = {
-  Plants: ['id', 'name', 'location', 'active', 'trip_rate_rm'],
+  // type: 'batching' | 'premix' — which workspace the plant belongs to (blank = batching)
+  Plants: ['id', 'name', 'location', 'active', 'trip_rate_rm', 'type'],
   Companies: ['id', 'name'],
   Grades: ['id', 'name', 'default_rate'],
   // materials are global — every plant draws from the same catalogue. Priced (no opening balance).
@@ -22,10 +23,12 @@ export const SCHEMA = {
   Sales: [
     'id', 'plant_id', 'project_id', 'company_id', 'ref', 'date', 'do_no', 'grade_id',
     'volume_m3', 'rate_rm', 'trip', 'rm_per_trip',
-    'invoice_issued', 'invoice_date', 'do_file', 'remarks',
+    // pay_method: how the order is settled — 'cash' (cash payment) or 'reload' (reload-credit deduction)
+    'pay_method', 'invoice_issued', 'invoice_date', 'do_file', 'remarks',
   ],
   // contractor account: payments add funds, orders (Sales) draw them down. method: cash | reload
-  Payments: ['id', 'company_id', 'plant_id', 'date', 'amount_rm', 'method', 'remarks'],
+  // attachments: ';'-joined filenames stored on disk under data/attachments/payment-<id>/
+  Payments: ['id', 'company_id', 'plant_id', 'sale_id', 'date', 'amount_rm', 'method', 'remarks', 'attachments'],
   Pours: ['id', 'plant_id', 'project_id', 'date', 'grade_id', 'volume_m3', 'remarks'],
   // internal concrete transfer between plants — transport income + cement stock movement
   Deliveries: ['id', 'date', 'from_plant_id', 'to_plant_id', 'do_no', 'grade_id', 'volume_m3', 'trips', 'trip_rate_rm', 'cement_material_id', 'cement_qty', 'remarks'],

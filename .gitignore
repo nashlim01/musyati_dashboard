@@ -13,6 +13,8 @@ server/data/attachments/
 
 # OS noise
 .DS_Store
+# Word/Office temporary lock files
+~$*
 
 # the Windows bundle is generated, not source
 Musyati-Windows.zip

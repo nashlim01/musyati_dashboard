@@ -2,17 +2,22 @@ import { useMemo, useState } from 'react'
 import { useData } from '../lib/data.jsx'
 import { saleTotal, allocate, companyAccount, buildLedger, num } from '../lib/calc.js'
 import { fmtRM, fmtNum, fmtDate, todayISO } from '../lib/format.js'
-import { Modal, Field, SectionCard, Empty, ConfirmDelete } from '../components/ui.jsx'
+import { Modal, Field, SectionCard, Empty, ConfirmDelete, ExportButtons } from '../components/ui.jsx'
 
 const emptyForm = (plantId) => ({
   plant_id: plantId, project_id: '', company_id: '', ref: '', date: todayISO(), do_no: '',
   grade_id: '', volume_m3: '', rate_rm: '', trip: 1, rm_per_trip: 100,
-  invoice_issued: 0, invoice_date: '', do_file: '', remarks: '',
+  pay_method: 'cash', invoice_issued: 0, invoice_date: '', do_file: '', remarks: '',
 })
 
-const STATUS_LABEL = { paid: 'Paid', partial: 'Partial', unpaid: 'Unpaid' }
-const STATUS_CLS = { paid: 'text-emerald-600', partial: 'text-amber-600', unpaid: 'text-red-500' }
-const STATUS_ORDER = { paid: 2, partial: 1, unpaid: 0 }
+const STATUS_LABEL = { paid: 'Paid', unpaid: 'Unpaid' }
+const STATUS_CLS = { paid: 'text-emerald-600', unpaid: 'text-red-500' }
+const STATUS_ORDER = { paid: 1, unpaid: 0 }
+
+// How a sale is meant to be settled — informational (settlement is pooled FIFO).
+const PAYVIA_LABEL = { reload: 'Reload credit', cash: 'Cash payment' }
+const PAYVIA_CLS = { reload: 'bg-violet-100 text-violet-700', cash: 'bg-sky-100 text-sky-700' }
+const payViaOf = (s) => (s.pay_method === 'reload' ? 'reload' : 'cash')
 
 const makeColumns = (companiesById, gradesById, statusById) => [
   { label: '#', align: 'left' },
@@ -26,6 +31,7 @@ const makeColumns = (companiesById, gradesById, statusById) => [
   { label: 'Trip', align: 'right', sort: (s) => Number(s.trip) || 0 },
   { label: 'RM/Trip', align: 'right', sort: (s) => Number(s.rm_per_trip) || 0 },
   { label: 'Total (RM)', align: 'right', sort: (s) => saleTotal(s) },
+  { label: 'Pay Via', sort: (s) => payViaOf(s) },
   { label: 'Payment', sort: (s) => STATUS_ORDER[statusById.get(s.id) ?? 'unpaid'] },
   { label: 'Invoice', sort: (s) => Number(s.invoice_issued) || 0 },
   { label: 'Files' },
@@ -138,6 +144,28 @@ export default function Sales() {
             <span className="inline-flex items-center gap-1.5 font-semibold text-red-600">
               <span className="w-1.5 h-1.5 rounded-full bg-red-500" /> Unpaid {fmtRM(totals.unpaid)}
             </span>
+            <ExportButtons filename="sales" build={() => ({
+              title: 'Concrete Sales Records',
+              subtitle: `${filtered.length} records · Paid ${fmtRM(totals.paid)} · Unpaid ${fmtRM(totals.unpaid)}`,
+              meta: [`Paid ${fmtRM(totals.paid)} · Unpaid ${fmtRM(totals.unpaid)} · ${filtered.length} records`],
+              columns: [
+                { header: 'Company', value: (s) => companiesById[s.company_id]?.name ?? '' },
+                { header: 'Ref', value: (s) => s.ref },
+                { header: 'Date', value: (s) => s.date, text: (s) => fmtDate(s.date) },
+                { header: 'DO No.', value: (s) => s.do_no },
+                { header: 'Grade', value: (s) => gradesById[s.grade_id]?.name ?? '' },
+                { header: 'Vol (m³)', align: 'right', value: (s) => num(s.volume_m3) },
+                { header: 'Rate (RM)', align: 'right', value: (s) => num(s.rate_rm) },
+                { header: 'Trip', align: 'right', value: (s) => num(s.trip) },
+                { header: 'RM/Trip', align: 'right', value: (s) => num(s.rm_per_trip) },
+                { header: 'Total (RM)', align: 'right', value: (s) => saleTotal(s), text: (s) => fmtNum(saleTotal(s)) },
+                { header: 'Pay Via', value: (s) => PAYVIA_LABEL[payViaOf(s)] },
+                { header: 'Payment', value: (s) => STATUS_LABEL[statusById.get(s.id) ?? 'unpaid'] },
+                { header: 'Paid (RM)', align: 'right', value: (s) => Math.min(saleTotal(s), num(paidById.get(s.id))) },
+                { header: 'Invoice', value: (s) => (Number(s.invoice_issued) === 1 ? 'Issued' : 'Pending') },
+                { header: 'Remarks', value: (s) => s.remarks },
+              ], rows: sorted,
+            })} />
             <span className="mono text-neutral-400">{filtered.length} records</span>
           </div>
         }
@@ -181,8 +209,12 @@ export default function Sales() {
                     <td className="td text-right">{fmtNum(s.rm_per_trip)}</td>
                     <td className="td text-right font-bold">{fmtNum(saleTotal(s))}</td>
                     <td className="td">
+                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${PAYVIA_CLS[payViaOf(s)]}`}>{PAYVIA_LABEL[payViaOf(s)]}</span>
+                    </td>
+                    <td className="td">
                       <span className={`text-xs font-semibold ${STATUS_CLS[status]}`}>{STATUS_LABEL[status]}</span>
-                      {status === 'partial' && <div className="text-[10px] text-neutral-400">{fmtNum(paidById.get(s.id))} paid</div>}
+                      {status === 'unpaid' && num(paidById.get(s.id)) > 0.005 &&
+                        <div className="text-[10px] text-neutral-400">{fmtNum(paidById.get(s.id))} paid</div>}
                     </td>
                     <td className="td text-center">{Number(s.invoice_issued) === 1
                       ? <span title={s.invoice_date ? fmtDate(s.invoice_date) : ''}>✓</span> : '—'}</td>
@@ -246,9 +278,11 @@ function CompanyAccountPanel({ sales, payments, fCompany }) {
         </div>
         {acct && (
           <div className="flex items-center gap-4 text-sm">
-            {acct.outstanding > 0 && <span className="font-bold text-red-600">Outstanding {fmtRM(acct.outstanding)}</span>}
-            {acct.credit > 0 && <span className="font-bold text-emerald-600">Credit {fmtRM(acct.credit)}</span>}
-            {acct.outstanding === 0 && acct.credit === 0 && <span className="font-bold text-neutral-500">Settled</span>}
+            {acct.outstanding > 0.005
+              ? <span className="font-bold text-red-600">Overdue {fmtRM(acct.outstanding)}</span>
+              : acct.credit > 0.005
+                ? <span className="font-bold text-emerald-600">Credit Balance {fmtRM(acct.credit)}</span>
+                : <span className="font-bold text-neutral-500">Settled</span>}
           </div>
         )}
       </div>
@@ -258,18 +292,28 @@ function CompanyAccountPanel({ sales, payments, fCompany }) {
             <thead>
               <tr>
                 <th className="th">Date</th>
-                <th className="th text-right">Payment In (RM)</th>
+                <th className="th text-right">Cash In (RM)</th>
+                <th className="th text-right">Reload In (RM)</th>
                 <th className="th text-right">Order (RM)</th>
                 <th className="th text-right">Balance (RM)</th>
+                <th className="th">Files</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.date}>
                   <td className="td">{fmtDate(r.date)}</td>
-                  <td className="td text-right text-emerald-700">{r.cashIn ? fmtNum(r.cashIn) : ''}</td>
+                  <td className="td text-right text-sky-700">{r.cashIn ? fmtNum(r.cashIn) : ''}</td>
+                  <td className="td text-right text-violet-700">{r.reloadIn ? fmtNum(r.reloadIn) : ''}</td>
                   <td className="td text-right">{r.order ? fmtNum(r.order) : ''}</td>
-                  <td className={`td text-right font-semibold ${r.balance < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{fmtNum(r.balance)}</td>
+                  <td className={`td text-right font-semibold ${r.balance < -0.005 ? 'text-red-600' : 'text-emerald-700'}`}>{fmtNum(r.balance)}</td>
+                  <td className="td">
+                    {r.files.map((file) => (
+                      <a key={`${file.id}-${file.name}`} href={`/api/files/payment-${file.id}/${encodeURIComponent(file.name)}`}
+                        target="_blank" rel="noreferrer"
+                        className="block text-xs text-blue-700 hover:underline max-w-[140px] truncate" title={file.name}>📎 {file.name}</a>
+                    ))}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -277,7 +321,7 @@ function CompanyAccountPanel({ sales, payments, fCompany }) {
         </div>
       )}
       <div className="px-4 py-2 text-[11px] text-neutral-400 border-t border-neutral-100">
-        Positive balance = credit available; negative = outstanding. Payments cover orders oldest-first.
+        Every payment (cash-in or reload) clears the earliest unpaid orders first. Positive balance = Credit Balance available for upcoming orders; negative = Overdue.
       </div>
     </div>
   )
@@ -285,26 +329,36 @@ function CompanyAccountPanel({ sales, payments, fCompany }) {
 
 // ---- Record payment (cash or reload credit) ----
 function PaymentModal({ form, onClose }) {
-  const { companies, sales, payments, create } = useData()
+  const { companies, sales, payments, create, refresh, demo } = useData()
   const [f, setF] = useState(form)
   const [error, setError] = useState('')
+  const [pendingFiles, setPendingFiles] = useState([])
+  const [saving, setSaving] = useState(false)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
 
-  // preview the effect on the company's balance
+  // preview the effect by recomputing the account with this hypothetical payment
   const preview = useMemo(() => {
     if (!f.company_id) return null
-    const before = companyAccount(Number(f.company_id), sales, payments).balance
-    const after = before + (Number(f.amount_rm) || 0)
-    return { outstanding: Math.max(0, -after), credit: Math.max(0, after) }
-  }, [f.company_id, f.amount_rm, sales, payments])
+    const hypo = { company_id: Number(f.company_id), date: f.date || todayISO(), amount_rm: Number(f.amount_rm) || 0, method: f.method }
+    return companyAccount(Number(f.company_id), sales, [...payments, hypo])
+  }, [f.company_id, f.amount_rm, f.method, f.date, sales, payments])
 
   const save = async () => {
+    if (saving) return
+    if (!f.company_id) return setError('Choose a company')
+    if (!(Number(f.amount_rm) > 0)) return setError('Enter an amount')
+    setSaving(true)
     try {
-      if (!f.company_id) return setError('Choose a company')
-      if (!(Number(f.amount_rm) > 0)) return setError('Enter an amount')
-      await create('payments', { ...f, amount_rm: Number(f.amount_rm) })
+      const saved = await create('payments', { ...f, amount_rm: Number(f.amount_rm) })
+      if (!demo && pendingFiles.length > 0) {
+        const fd = new FormData()
+        for (const file of pendingFiles) fd.append('files', file)
+        const res = await fetch(`/api/payments/${saved.id}/attachments`, { method: 'POST', body: fd })
+        if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error || 'File upload failed') }
+        await refresh()
+      }
       onClose()
-    } catch (e) { setError(e.message) }
+    } catch (e) { setError(e.message) } finally { setSaving(false) }
   }
 
   return (
@@ -325,19 +379,27 @@ function PaymentModal({ form, onClose }) {
         </Field>
         <Field label="Amount (RM)"><input type="number" step="0.01" className="input w-full" value={f.amount_rm} onChange={set('amount_rm')} autoFocus /></Field>
         <Field label="Remarks" span2><input className="input w-full" value={f.remarks} onChange={set('remarks')} /></Field>
+        <Field label="Attachment — bank slip / receipt" span2>
+          <input type="file" multiple className="block text-sm text-neutral-600 file:mr-3 file:btn file:cursor-pointer"
+            onChange={(e) => setPendingFiles([...e.target.files])} />
+          {pendingFiles.length > 0 && <div className="text-xs text-neutral-500 mt-1">{pendingFiles.length} file(s) will be uploaded on save</div>}
+          {demo && <div className="text-[11px] text-amber-600 mt-1">Demo mode — attachments are not saved.</div>}
+        </Field>
       </div>
       {preview && (
         <div className="mt-3 text-xs bg-neutral-50 border border-neutral-200 rounded-md px-3 py-2">
-          After this payment — {preview.outstanding > 0
-            ? <span className="text-red-600 font-semibold">Outstanding {fmtRM(preview.outstanding)}</span>
-            : <span className="text-emerald-600 font-semibold">Credit {fmtRM(preview.credit)}</span>}
-          {f.method === 'reload' && <span className="text-neutral-400"> · clears debt first, remainder becomes credit</span>}
+          After this payment — {preview.outstanding > 0.005
+            ? <span className="font-semibold text-red-600">Overdue {fmtRM(preview.outstanding)}</span>
+            : <span className="font-semibold text-emerald-600">Credit Balance {fmtRM(preview.credit)}</span>}
+          <span className="text-neutral-400 block mt-1">
+            Clears the earliest unpaid orders first; any surplus becomes Credit Balance for upcoming orders.
+          </span>
         </div>
       )}
       {error && <div className="text-xs text-red-600 mt-2">{error}</div>}
       <div className="flex justify-end gap-2 mt-4">
         <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn-dark" onClick={save}>Save Payment</button>
+        <button className="btn-dark" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Payment'}</button>
       </div>
     </Modal>
   )
@@ -447,6 +509,12 @@ function SaleModal({ form, onClose }) {
         <Field label="Rate (RM/m³)"><input type="number" step="0.01" className="input w-full" value={f.rate_rm} onChange={set('rate_rm')} /></Field>
         <Field label="Trips"><input type="number" step="1" className="input w-full" value={f.trip} onChange={set('trip')} /></Field>
         <Field label="RM / Trip"><input type="number" step="0.01" className="input w-full" value={f.rm_per_trip} onChange={set('rm_per_trip')} /></Field>
+        <Field label="Pay Via">
+          <select className="input w-full" value={f.pay_method ?? 'cash'} onChange={set('pay_method')}>
+            <option value="cash">Cash payment</option>
+            <option value="reload">Reload credit</option>
+          </select>
+        </Field>
         <Field label="Remarks"><input className="input w-full" value={f.remarks} onChange={set('remarks')} /></Field>
       </div>
 
@@ -479,7 +547,7 @@ function SaleModal({ form, onClose }) {
         <div className="flex-1" />
         <div className="text-sm">Total: <span className="font-bold">{fmtRM(total)}</span></div>
       </div>
-      <div className="text-[11px] text-neutral-400 mt-2">Payment is tracked at company level — use “+ Record Payment”. This sale’s paid status is derived from the account.</div>
+      <div className="text-[11px] text-neutral-400 mt-2">Payment is recorded at company level — use “+ Record Payment”. Payments clear the earliest unpaid orders first; this sale shows Paid once settled.</div>
       {error && <div className="text-xs text-red-600 mt-2">{error}</div>}
       <div className="flex justify-end gap-2 mt-4">
         <button className="btn" onClick={onClose}>Cancel</button>

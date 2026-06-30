@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useData } from './lib/data.jsx'
+import { exportFullReportExcel, exportFullReportPDF } from './lib/report.js'
 import PlantSelector from './components/PlantSelector.jsx'
 import PlantsManager from './components/PlantsManager.jsx'
 import Sidebar from './components/Sidebar.jsx'
@@ -14,26 +15,25 @@ import Manpower from './pages/Manpower.jsx'
 import Costing from './pages/Costing.jsx'
 import CostLog from './pages/CostLog.jsx'
 
-// Two workspaces: the batching-plant operation, and the project portfolio.
+// The plant dashboard tab set, shared by the Batching and Premix workspaces
+// (each scopes to its own plant type via `plantType`).
+const plantTabs = (prefix) => [
+  [`${prefix}-overview`, 'Overview', Overview],
+  [`${prefix}-sales-dashboard`, 'Sales Dashboard', SalesDashboard],
+  [`${prefix}-sales`, 'Sales', Sales],
+  [`${prefix}-pours`, 'Concrete Production', PourRecords],
+  [`${prefix}-materials`, 'Materials', Materials],
+  [`${prefix}-machinery`, 'Machinery', Machinery],
+  [`${prefix}-manpower`, 'Manpower', Manpower],
+  [`${prefix}-costing`, 'Costing', Costing],
+  [`${prefix}-cost-log`, 'Cost Log', CostLog],
+]
+
+// Top-level workspaces. `plantType` scopes which plants' data a workspace shows.
 const WORKSPACES = {
-  plant: {
-    label: 'Batching Plant', icon: '🏭',
-    tabs: [
-      ['overview', 'Overview', Overview],
-      ['sales', 'Sales', Sales],
-      ['sales-dashboard', 'Sales Dashboard', SalesDashboard],
-      ['pours', 'Concrete Production', PourRecords],
-      ['materials', 'Materials', Materials],
-      ['machinery', 'Machinery', Machinery],
-      ['manpower', 'Manpower', Manpower],
-      ['costing', 'Costing', Costing],
-      ['cost-log', 'Cost Log', CostLog],
-    ],
-  },
-  projects: {
-    label: 'Projects', icon: '🏗️',
-    tabs: [['projects', 'Projects', Projects]],
-  },
+  plant: { label: 'Batching Plant', icon: '🏭', plantType: 'batching', tabs: plantTabs('bp') },
+  premix: { label: 'Premix Plant', icon: '🧱', plantType: 'premix', tabs: plantTabs('pp') },
+  projects: { label: 'Projects', icon: '🏗️', plantType: null, tabs: [['projects', 'Projects', Projects]] },
 }
 
 const persisted = (key, fallback) => {
@@ -41,11 +41,15 @@ const persisted = (key, fallback) => {
 }
 
 export default function App() {
-  const { loaded, status, plantSel, plants, selectedPlantIds } = useData()
+  const data = useData()
+  const { loaded, status, plantSel, plants, selectedPlantIds, setPlantType } = data
   const [workspace, setWorkspaceState] = useState(() => persisted('mt.workspace', 'plant'))
   const [tab, setTab] = useState(() => WORKSPACES[persisted('mt.workspace', 'plant')]?.tabs[0][0] ?? 'overview')
   const [sidebarOpen, setSidebarOpen] = useState(() => persisted('mt.sidebar', true))
   const [managing, setManaging] = useState(false)
+
+  // keep the data layer's plant-type scope in sync with the active workspace
+  useEffect(() => { setPlantType((WORKSPACES[workspace] ?? WORKSPACES.plant).plantType) }, [workspace, setPlantType])
 
   const ws = WORKSPACES[workspace] ?? WORKSPACES.plant
   const setWorkspace = (key) => {
@@ -60,10 +64,10 @@ export default function App() {
 
   const Page = ws.tabs.find(([key]) => key === tab)?.[2] ?? ws.tabs[0][2]
 
-  const scopeLabel = plantSel === 'all'
-    ? 'All Plants — Aggregated Overview'
-    : selectedPlantIds.length === 1
-      ? plants.find((p) => Number(p.id) === selectedPlantIds[0])?.name
+  const scopeLabel = selectedPlantIds.length === 1
+    ? plants.find((p) => Number(p.id) === selectedPlantIds[0])?.name ?? 'No plant'
+    : plantSel === 'all'
+      ? 'All Plants — Aggregated Overview'
       : `${selectedPlantIds.length} plants — Combined`
 
   return (
@@ -99,6 +103,18 @@ export default function App() {
               <span className={`w-2 h-2 rounded-full ${status === 'connected' ? 'bg-emerald-400' : status === 'demo' ? 'bg-blue-400' : status === 'error' ? 'bg-red-400' : 'bg-yellow-400'}`} />
               {status === 'connected' ? 'Connected' : status === 'demo' ? 'Demo — changes not saved' : status === 'error' ? 'Offline' : 'Connecting…'}
             </span>
+            {/* Combined report — every section, as one Excel workbook or one PDF */}
+            <div className="inline-flex items-center rounded-md border border-neutral-600 overflow-hidden text-neutral-200">
+              <span className="text-[11px] text-neutral-400 px-2 hidden lg:inline">Report</span>
+              <button
+                className="text-sm px-3 py-1.5 hover:bg-neutral-800 border-l border-neutral-600 cursor-pointer"
+                onClick={() => exportFullReportExcel(data)} title="Export the whole dashboard to one Excel workbook"
+              >↓ Excel</button>
+              <button
+                className="text-sm px-3 py-1.5 hover:bg-neutral-800 border-l border-neutral-600 cursor-pointer"
+                onClick={() => exportFullReportPDF(data)} title="Export an executive summary PDF"
+              >↓ PDF</button>
+            </div>
             {status !== 'demo' && (
               <a
                 href="/api/backup"

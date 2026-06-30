@@ -28,6 +28,8 @@ export function DataProvider({ children }) {
   const [status, setStatus] = useState('connecting') // connecting | connected | demo | error
   // plant selection: 'all' or array of plant ids
   const [plantSel, setPlantSel] = useState('all')
+  // active workspace's plant type ('batching' | 'premix' | null = all plants)
+  const [plantType, setPlantTypeState] = useState('batching')
   // demo mode keeps the dataset in a ref so rapid in-memory writes don't race
   const demoRef = useRef(false)
   const dataRef = useRef(null)
@@ -98,9 +100,17 @@ export function DataProvider({ children }) {
     return r
   }, [refresh])
 
+  // switching workspace type clears the plant selection so stale ids don't leak across types
+  const setPlantType = useCallback((t) => {
+    setPlantTypeState(t)
+    setPlantSel('all')
+  }, [])
+
   const value = useMemo(() => {
     const d = data ?? {}
-    const plants = d.Plants ?? []
+    const allPlants = d.Plants ?? []
+    // scope the plant list to the active workspace's type (blank type = batching)
+    const plants = plantType ? allPlants.filter((p) => (p.type || 'batching') === plantType) : allPlants
     const selectedPlantIds = plantSel === 'all'
       ? plants.map((p) => Number(p.id))
       : plantSel
@@ -112,6 +122,8 @@ export function DataProvider({ children }) {
       demo: status === 'demo',
       refresh, create, update, remove,
       plants,
+      allPlants,
+      plantType, setPlantType,
       companies: d.Companies ?? [],
       grades: d.Grades ?? [],
       materials: d.Materials ?? [],
@@ -140,7 +152,7 @@ export function DataProvider({ children }) {
       projectsById: byId(d.Projects),
       plantSel, setPlantSel, selectedPlantIds, inSelection,
     }
-  }, [data, status, plantSel, refresh, create, update, remove])
+  }, [data, status, plantSel, plantType, setPlantType, refresh, create, update, remove])
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>
 }

@@ -13,6 +13,9 @@ export default function PlantSelector() {
     return () => window.removeEventListener('mousedown', onClick)
   }, [])
 
+  // with a single plant (e.g. Premix) there's nothing to choose — hide the selector
+  if (plants.length <= 1) return null
+
   const isAll = plantSel === 'all'
   const selectedIds = isAll ? plants.map((p) => Number(p.id)) : plantSel
   const labelText = isAll

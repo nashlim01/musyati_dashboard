@@ -2,24 +2,28 @@ import { useState } from 'react'
 import { useData } from '../lib/data.jsx'
 import { Modal, Field, ConfirmDelete } from './ui.jsx'
 
+const TYPES = [['batching', 'Batching'], ['premix', 'Premix']]
+const typeOf = (p) => (p.type === 'premix' ? 'premix' : 'batching')
+
 export default function PlantsManager({ onClose }) {
-  const { plants, create, update, remove } = useData()
+  const { allPlants, plantType, create, update, remove } = useData()
   const [name, setName] = useState('')
   const [location, setLocation] = useState('')
+  const [type, setType] = useState(plantType || 'batching')
   const [error, setError] = useState('')
 
   const addPlant = async () => {
     if (!name.trim()) return
     try {
-      await create('plants', { name: name.trim(), location: location.trim(), active: 1 })
+      await create('plants', { name: name.trim(), location: location.trim(), active: 1, type })
       setName(''); setLocation(''); setError('')
     } catch (e) { setError(e.message) }
   }
 
   return (
-    <Modal title="Manage Plants" onClose={onClose}>
+    <Modal title="Manage Plants" onClose={onClose} wide>
       <div className="space-y-2 mb-4">
-        {plants.map((p) => (
+        {allPlants.map((p) => (
           <div key={p.id} className="flex items-center gap-2 border border-neutral-200 rounded-md px-3 py-2">
             <input
               className="input flex-1 !border-transparent hover:!border-neutral-300"
@@ -38,14 +42,26 @@ export default function PlantsManager({ onClose }) {
                 if (v !== p.location) update('plants', p.id, { location: v }).catch((err) => setError(err.message))
               }}
             />
+            <select
+              className="input !py-1 w-28"
+              value={typeOf(p)}
+              onChange={(e) => update('plants', p.id, { type: e.target.value }).catch((err) => setError(err.message))}
+            >
+              {TYPES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+            </select>
             <ConfirmDelete onConfirm={() => remove('plants', p.id).catch((err) => setError(err.message))} />
           </div>
         ))}
       </div>
       <div className="label mb-2">Add plant</div>
-      <div className="grid grid-cols-2 gap-2 mb-2">
+      <div className="grid grid-cols-3 gap-2 mb-2">
         <Field label="Name"><input className="input w-full" value={name} onChange={(e) => setName(e.target.value)} placeholder="Plant B — Lawas" /></Field>
         <Field label="Location"><input className="input w-full" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Lawas Batching Plant" /></Field>
+        <Field label="Type">
+          <select className="input w-full" value={type} onChange={(e) => setType(e.target.value)}>
+            {TYPES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+          </select>
+        </Field>
       </div>
       {error && <div className="text-xs text-red-600 mb-2">{error}</div>}
       <button className="btn-dark" onClick={addPlant}>+ Add Plant</button>

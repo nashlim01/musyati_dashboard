@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useData } from '../lib/data.jsx'
 import { num, monthOf, activeMonths } from '../lib/calc.js'
 import { fmtRM, fmtDate, fmtMonth, todayISO } from '../lib/format.js'
-import { Modal, Field, SectionCard, Empty, ConfirmDelete } from '../components/ui.jsx'
+import { Modal, Field, SectionCard, Empty, ConfirmDelete, ExportButtons } from '../components/ui.jsx'
 
 export default function CostLog() {
   const data = useData()
@@ -43,7 +43,22 @@ export default function CostLog() {
 
       <SectionCard
         title="Expense Records"
-        right={<span className="mono text-xs text-neutral-400">{filtered.length} records · {fmtRM(totalShown)}</span>}
+        right={
+          <div className="flex items-center gap-3">
+            <ExportButtons filename="expenses" build={() => ({
+              title: 'Expense Records', subtitle: `${filtered.length} records · ${fmtRM(totalShown)}`,
+              meta: [`Total shown: ${fmtRM(totalShown)} · ${filtered.length} records`],
+              columns: [
+                { header: 'Date', value: (e) => e.date, text: (e) => fmtDate(e.date) },
+                { header: 'Plant', value: (e) => plantsById[e.plant_id]?.name ?? '' },
+                { header: 'Project', value: (e) => e.project_id ? (projectsById[e.project_id]?.code || projectsById[e.project_id]?.name || '') : '' },
+                { header: 'Category', value: (e) => e.category },
+                { header: 'Description', value: (e) => e.description },
+                { header: 'Amount (RM)', align: 'right', value: (e) => num(e.amount_rm), text: (e) => fmtRM(e.amount_rm) },
+              ], rows: filtered })} />
+            <span className="mono text-xs text-neutral-400">{filtered.length} records · {fmtRM(totalShown)}</span>
+          </div>
+        }
       >
         <div className="table-scroll"><table className="w-full">
           <thead>

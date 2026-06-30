@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useData } from '../lib/data.jsx'
 import { num, monthOf, deliveryIncome, materialBalance } from '../lib/calc.js'
 import { fmtNum, fmtRM, fmtDate, fmtMonth, todayISO } from '../lib/format.js'
-import { Modal, Field, SectionCard, Empty, ConfirmDelete } from '../components/ui.jsx'
+import { Modal, Field, SectionCard, Empty, ConfirmDelete, ExportButtons } from '../components/ui.jsx'
 
 export default function PourRecords() {
   const data = useData()
@@ -158,7 +158,21 @@ export default function PourRecords() {
 
       <SectionCard
         title="Production Entries"
-        right={<span className="mono text-xs text-neutral-400">{sorted.length} records</span>}
+        right={
+          <div className="flex items-center gap-3">
+            <ExportButtons filename="production" build={() => ({
+              title: `Concrete Production ${fmtMonth(month)}`, subtitle: `${fmtMonth(month)} · Total ${fmtNum(matrix.grand, 1)} m³`,
+              meta: [`Month: ${fmtMonth(month)}`, `Total production: ${fmtNum(matrix.grand, 1)} m³`],
+              columns: [
+                { header: 'Date', value: (p) => p.date, text: (p) => fmtDate(p.date) },
+                { header: 'Plant', value: (p) => plantsById[p.plant_id]?.name ?? '' },
+                { header: 'Grade', value: (p) => gradesById[p.grade_id]?.name ?? '?' },
+                { header: 'Volume (m³)', align: 'right', value: (p) => num(p.volume_m3), text: (p) => fmtNum(p.volume_m3, 1) },
+                { header: 'Remarks', value: (p) => p.remarks },
+              ], rows: sorted })} />
+            <span className="mono text-xs text-neutral-400">{sorted.length} records</span>
+          </div>
+        }
       >
         <div className="table-scroll"><table className="w-full">
           <thead>
@@ -312,7 +326,26 @@ function InternalDelivery() {
 
       <SectionCard
         title="Internal Concrete Deliveries"
-        right={<span className="mono text-xs text-neutral-400">Transport income {fmtRM(totalIncome)} · {myDeliveries.length} records</span>}
+        right={
+          <div className="flex items-center gap-3">
+            <ExportButtons filename="internal-deliveries" build={() => ({
+              title: 'Internal Concrete Deliveries', subtitle: `Transport income ${fmtRM(totalIncome)}`,
+              meta: [`Transport income: ${fmtRM(totalIncome)} · ${myDeliveries.length} records`],
+              columns: [
+                { header: 'Date', value: (d) => d.date, text: (d) => fmtDate(d.date) },
+                { header: 'DO No.', value: (d) => d.do_no },
+                { header: 'Grade', value: (d) => gradesById[d.grade_id]?.name ?? '?' },
+                { header: 'Vol (m³)', align: 'right', value: (d) => num(d.volume_m3), text: (d) => fmtNum(d.volume_m3, 1) },
+                { header: 'From', value: (d) => plantsById[d.from_plant_id]?.name ?? '' },
+                { header: 'To', value: (d) => plantsById[d.to_plant_id]?.name ?? '' },
+                { header: 'Trips', align: 'right', value: (d) => num(d.trips) },
+                { header: 'Trip Rate (RM)', align: 'right', value: (d) => num(d.trip_rate_rm), text: (d) => fmtRM(d.trip_rate_rm) },
+                { header: 'Transport (RM)', align: 'right', value: (d) => deliveryIncome(d), text: (d) => fmtRM(deliveryIncome(d)) },
+                { header: 'Cement Moved', align: 'right', value: (d) => num(d.cement_qty) },
+              ], rows: myDeliveries })} />
+            <span className="mono text-xs text-neutral-400">Transport income {fmtRM(totalIncome)} · {myDeliveries.length} records</span>
+          </div>
+        }
       >
         <div className="table-scroll">
           <table className="w-full min-w-[1000px]">
