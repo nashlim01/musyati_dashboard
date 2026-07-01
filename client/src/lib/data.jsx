@@ -103,6 +103,49 @@ export function DataProvider({ children }) {
     return r
   }, [refresh])
 
+  // Executive Dashboard — copy the latest snapshot forward into a new month.
+  // In demo mode there's no server, so replicate the copy in memory.
+  const demoStartNewMonth = (month) => {
+    const d = dataRef.current
+    const overviews = d.ExecOverview ?? []
+    if (overviews.some((r) => r.month === month)) throw new Error(`Month ${month} already exists`)
+    const months = [...new Set(overviews.map((r) => r.month).filter(Boolean))].sort()
+    const src = months[months.length - 1]
+    if (!src) throw new Error('No existing snapshot to copy from')
+    const next = { ...d }
+    const nextId = (sheet) => (next[sheet] ?? []).reduce((m, r) => Math.max(m, Number(r.id) || 0), 0) + 1
+    const copy = (sheet, transform = (r) => r) => {
+      next[sheet] = [...(next[sheet] ?? [])]
+      for (const r of (d[sheet] ?? []).filter((x) => x.month === src)) {
+        next[sheet].push({ ...transform({ ...r }), id: nextId(sheet), month })
+      }
+    }
+    copy('ExecOverview', (r) => ({ ...r, data_as_at: month }))
+    for (const s of ['EwActivities', 'PavementLayers', 'CulvertZones', 'ProjectMachinery']) copy(s)
+    copy('MonthlyTargets', (r) => ({ ...r, done: 0 }))
+    const idMap = new Map()
+    next.Bridges = [...(next.Bridges ?? [])]
+    for (const b of (d.Bridges ?? []).filter((x) => x.month === src)) {
+      const id = nextId('Bridges'); idMap.set(Number(b.id), id)
+      next.Bridges.push({ ...b, id, month })
+    }
+    for (const sheet of ['BridgeProgress', 'BridgePiles']) {
+      next[sheet] = [...(next[sheet] ?? [])]
+      for (const r of (d[sheet] ?? []).filter((x) => x.month === src)) {
+        const bridgeId = idMap.get(Number(r.bridge_id))
+        if (bridgeId) next[sheet].push({ ...r, id: nextId(sheet), month, bridge_id: bridgeId })
+      }
+    }
+    apply(next)
+    return { ok: true, month, from: src }
+  }
+  const startNewMonth = useCallback(async (month) => {
+    if (demoRef.current) return demoStartNewMonth(month)
+    const r = await request('POST', '/api/exec/new-month', { month })
+    await refresh()
+    return r
+  }, [refresh])
+
   // switching workspace type clears the plant selection so stale ids don't leak across types
   const setPlantType = useCallback((t) => {
     setPlantTypeState(t)
@@ -123,7 +166,7 @@ export function DataProvider({ children }) {
       loaded: !!data,
       status,
       demo: status === 'demo',
-      refresh, create, update, remove,
+      refresh, create, update, remove, startNewMonth,
       plants,
       allPlants,
       plantType, setPlantType,
@@ -146,7 +189,9 @@ export function DataProvider({ children }) {
       projectUpdates: d.ProjectUpdates ?? [],
       foundationGroups: d.FoundationGroups ?? [],
       piles: d.Piles ?? [],
-      // executive project dashboard
+      // executive project dashboard — monthly snapshots (month = YYYY-MM)
+      execOverviews: d.ExecOverview ?? [],
+      execMonths: [...new Set((d.ExecOverview ?? []).map((r) => r.month).filter(Boolean))].sort().reverse(),
       execOverview: (d.ExecOverview ?? [])[0] ?? null,
       ewActivities: d.EwActivities ?? [],
       pavementLayers: d.PavementLayers ?? [],
@@ -166,7 +211,7 @@ export function DataProvider({ children }) {
       projectsById: byId(d.Projects),
       plantSel, setPlantSel, selectedPlantIds, inSelection,
     }
-  }, [data, status, plantSel, plantType, setPlantType, refresh, create, update, remove])
+  }, [data, status, plantSel, plantType, setPlantType, refresh, create, update, remove, startNewMonth])
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>
 }

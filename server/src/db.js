@@ -48,9 +48,11 @@ export const SCHEMA = {
   FoundationGroups: ['id', 'project_id', 'name', 'diameter_mm', 'sort_order', 'remarks'],
   Piles: ['id', 'group_id', 'label', 'status', 'is_test_pile', 'done_date', 'remarks'],
 
-  // --- Executive Project Dashboard (single package; snapshot figures, % computed) ---
+  // --- Executive Project Dashboard ---
+  // Each sheet carries a `month` (YYYY-MM) so the board is a monthly snapshot:
+  // "start new month" copies the latest month's rows forward, keeping full history.
   ExecOverview: [
-    'id', 'title', 'subtitle', 'contract_sum_mil', 'start_date', 'end_date',
+    'id', 'month', 'title', 'subtitle', 'contract_sum_mil', 'start_date', 'end_date',
     'length_km', 'chainage_from', 'chainage_to', 'road_width_text', 'data_as_at', 'construction_period_text',
     'physical_pct', 'physical_plan_pct', 'financial_pct', 'financial_plan_pct',
     'earthwork_total_mil', 'earth_mil', 'rock_mil', 'cut_to_dispose_mil', 'cut_to_fill_mil',
@@ -60,15 +62,15 @@ export const SCHEMA = {
     'contract_excl_mil', 'total_expenses_mil', 'current_profit_mil', 'claims_to_date_mil',
     'balance_to_claim_mil', 'cumulative_ipc_mil', 'avg_monthly_claim_mil',
   ],
-  EwActivities: ['id', 'name', 'pct', 'sort_order'],
-  PavementLayers: ['id', 'name', 'total_km', 'completed_km', 'sort_order'],
-  CulvertZones: ['id', 'zone', 'outstanding', 'sort_order'],
-  Bridges: ['id', 'name', 'span', 'length_m', 'sort_order'],
+  EwActivities: ['id', 'month', 'name', 'pct', 'sort_order'],
+  PavementLayers: ['id', 'month', 'name', 'total_km', 'completed_km', 'sort_order'],
+  CulvertZones: ['id', 'month', 'zone', 'outstanding', 'sort_order'],
+  Bridges: ['id', 'month', 'name', 'span', 'length_m', 'sort_order'],
   // structure elements (Pile Cap, Column, Headstock, girder beams) as done/total counts
-  BridgeProgress: ['id', 'bridge_id', 'element', 'done', 'total', 'sort_order'],
+  BridgeProgress: ['id', 'month', 'bridge_id', 'element', 'done', 'total', 'sort_order'],
   // individual bored piles — status: not_done | in_progress | done; is_test_pile flag
-  BridgePiles: ['id', 'bridge_id', 'element', 'label', 'status', 'is_test_pile', 'done_date', 'sort_order'],
-  ProjectMachinery: ['id', 'name', 'count', 'sort_order'],
+  BridgePiles: ['id', 'month', 'bridge_id', 'element', 'label', 'status', 'is_test_pile', 'done_date', 'sort_order'],
+  ProjectMachinery: ['id', 'month', 'name', 'count', 'sort_order'],
   MonthlyTargets: ['id', 'month', 'text', 'done', 'sort_order'],
   // audit trail of dashboard edits — reference past inputs when keying updates
   ProjectLog: ['id', 'ts', 'section', 'field', 'label', 'old_value', 'new_value'],
@@ -102,7 +104,74 @@ export function load() {
   migrateLegacyPayments(rawBySheet)
   seedExecIfEmpty()
   seedBridgePilesIfEmpty()
+  migrateExecMonths()
   console.log(`Loaded workbook from ${FILE_PATH}`)
+}
+
+// Exec sheets that are partitioned by month (a monthly snapshot of the board).
+const EXEC_MONTH_SHEETS = [
+  'ExecOverview', 'EwActivities', 'PavementLayers', 'CulvertZones',
+  'Bridges', 'BridgeProgress', 'BridgePiles', 'ProjectMachinery', 'MonthlyTargets',
+]
+
+// One-time migration: exec sheets predating the monthly model have no `month`.
+// The current data is a single snapshot, so stamp every exec row with the
+// overview's `data_as_at` month, giving the dashboard one coherent month to start.
+function migrateExecMonths() {
+  const needs = EXEC_MONTH_SHEETS.some((s) => (tables[s] ?? []).some((r) => !r.month))
+  if (!needs) return
+  const base = String(tables.ExecOverview?.[0]?.data_as_at || '2026-06').slice(0, 7)
+  for (const s of EXEC_MONTH_SHEETS) for (const r of tables[s] ?? []) r.month = base
+  if (tables.ExecOverview?.[0] && !tables.ExecOverview[0].data_as_at) tables.ExecOverview[0].data_as_at = base
+  persist()
+  console.log(`Stamped Executive Dashboard rows with base month ${base}`)
+}
+
+// Copy the latest month's snapshot forward into a new month so figures carry
+// over and only the deltas need editing. Bridge FKs are remapped to the copies;
+// monthly targets start uncompleted. Returns { ok, month, from } or { error }.
+export function startNewMonth(targetMonth) {
+  const month = String(targetMonth || '').trim()
+  if (!/^\d{4}-\d{2}$/.test(month)) return { error: 'Month must be in YYYY-MM format' }
+  const overviews = tables.ExecOverview ?? []
+  if (overviews.some((r) => r.month === month)) return { error: `Month ${month} already exists` }
+  const months = [...new Set(overviews.map((r) => r.month).filter(Boolean))].sort()
+  const src = months[months.length - 1]
+  if (!src) return { error: 'No existing snapshot to copy from' }
+
+  const copy = (sheet, transform = (r) => r) => {
+    for (const r of (tables[sheet] ?? []).filter((x) => x.month === src)) {
+      tables[sheet].push(normalize(sheet, { ...transform({ ...r }), id: nextId(sheet), month }))
+    }
+  }
+  copy('ExecOverview', (r) => ({ ...r, data_as_at: month }))
+  copy('EwActivities')
+  copy('PavementLayers')
+  copy('CulvertZones')
+  copy('ProjectMachinery')
+  copy('MonthlyTargets', (r) => ({ ...r, done: 0 })) // a fresh month's targets start incomplete
+
+  // bridges get new ids; their structure/pile rows must point at the copies
+  const idMap = new Map()
+  for (const b of (tables.Bridges ?? []).filter((x) => x.month === src)) {
+    const newId = nextId('Bridges')
+    idMap.set(Number(b.id), newId)
+    tables.Bridges.push(normalize('Bridges', { ...b, id: newId, month }))
+  }
+  for (const sheet of ['BridgeProgress', 'BridgePiles']) {
+    for (const r of (tables[sheet] ?? []).filter((x) => x.month === src)) {
+      const bridgeId = idMap.get(Number(r.bridge_id))
+      if (!bridgeId) continue
+      tables[sheet].push(normalize(sheet, { ...r, id: nextId(sheet), month, bridge_id: bridgeId }))
+    }
+  }
+
+  tables.ProjectLog.push(normalize('ProjectLog', {
+    id: nextId('ProjectLog'), ts: new Date().toISOString(), section: 'Snapshot',
+    field: 'month', label: `Started new month ${month}`, old_value: src, new_value: month,
+  }))
+  persist()
+  return { ok: true, month, from: src }
 }
 
 const isBoredElement = (el) => /^Abt|^P\d/i.test(String(el))

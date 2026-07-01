@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { createContext, useContext, useMemo, useRef, useState } from 'react'
 import {
   ResponsiveContainer, RadialBarChart, RadialBar, PolarAngleAxis, BarChart, Bar, XAxis, YAxis, Cell, LabelList,
 } from 'recharts'
@@ -7,11 +7,24 @@ import { num, pct, exportExecPdf } from '../lib/exec.js'
 import { fmtNum, fmtMonth, fmtDate, todayISO } from '../lib/format.js'
 import { Modal, Field } from '../components/ui.jsx'
 import {
-  TbCoin, TbCalendarMonth, TbCalendarEvent, TbRoad, TbMapPin, TbMapPins, TbRulerMeasure,
+  TbCoin, TbCalendarMonth, TbCalendarEvent, TbCalendarPlus, TbRoad, TbMapPin, TbMapPins, TbRulerMeasure,
   TbMountain, TbStack2, TbBarrel, TbTruck, TbBuildingBroadcastTower, TbBolt, TbPick,
   TbUsers, TbUsersGroup, TbShieldCheck, TbBackhoe, TbBulldozer, TbCrane, TbCylinder,
   TbTractor, TbTools, TbShovel, TbTruckDelivery, TbTruckLoading, TbHistory, TbPencil,
 } from 'react-icons/tb'
+
+// The exec board is a monthly snapshot. This context exposes the rows for the
+// month currently being viewed/edited, plus a `create` that stamps that month,
+// so every editor stays scoped to the selected month.
+const ExecCtx = createContext(null)
+const useExec = () => useContext(ExecCtx)
+
+// 'YYYY-MM' -> the following month; falls back to the current month.
+const addMonth = (ym) => {
+  const [y, m] = String(ym || todayISO().slice(0, 7)).split('-').map(Number)
+  const dt = new Date(y, m, 1) // m is 1-based, so this is the next month
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
+}
 
 const fmtMil = (n) => `RM ${fmtNum(n, 2)} Mil`
 const SHEET_W = 1180
@@ -446,9 +459,9 @@ function RecentLog({ section }) {
 
 // A form over the single ExecOverview row: list of [key, label, type].
 function OverviewForm({ fields, section, onClose }) {
-  const { execOverview, update } = useData()
+  const { o, update } = useExec()
   const log = useLogger()
-  const [f, setF] = useState(() => ({ ...execOverview }))
+  const [f, setF] = useState(() => ({ ...o }))
   const [error, setError] = useState('')
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
   const save = async () => {
@@ -457,9 +470,9 @@ function OverviewForm({ fields, section, onClose }) {
       for (const [k, label, type] of fields) {
         const newV = type === 'num' ? Number(f[k]) || 0 : f[k]
         body[k] = newV
-        if (String(execOverview[k] ?? '') !== String(newV ?? '')) changes.push([k, label, execOverview[k], newV])
+        if (String(o[k] ?? '') !== String(newV ?? '')) changes.push([k, label, o[k], newV])
       }
-      await update('exec-overview', f.id ?? 1, body)
+      await update('exec-overview', f.id ?? o.id, body)
       for (const [k, label, oldV, newV] of changes) await log(section, k, label, oldV, newV)
       onClose()
     } catch (e) { setError(e.message) }
@@ -483,7 +496,7 @@ function OverviewForm({ fields, section, onClose }) {
 
 // Generic editor for a child list (add / edit inline / delete).
 function ListEditor({ resource, rows, columns, makeNew, section, onClose }) {
-  const { create, update, remove } = useData()
+  const { create, update, remove } = useExec()
   const log = useLogger()
   const [error, setError] = useState('')
   const rowName = (r) => r.name ?? r.zone ?? r.text ?? r.element ?? `#${r.id}`
@@ -528,7 +541,7 @@ const PILE_STATUS = { not_done: ['Not Done', '#94a3b8'], in_progress: ['In Progr
 
 // modal to set one pile's status / test flag / completion date
 function PileModal({ pile, bridgeName, onClose }) {
-  const { update, remove } = useData()
+  const { update, remove } = useExec()
   const log = useLogger()
   const [f, setF] = useState({ ...pile })
   const set = (patch) => setF((p) => ({ ...p, ...patch }))
@@ -598,7 +611,7 @@ function PileGroup({ bridgeName, element, piles, onAdd, onRename }) {
 
 // Bridges list + per-bridge editor. Bored piles use the status foundation board.
 function BridgesEditor({ onClose }) {
-  const { bridges, bridgeProgress, bridgePiles, create, update, remove } = useData()
+  const { bridges, bridgeProgress, bridgePiles, create, update, remove } = useExec()
   const log = useLogger()
   const [error, setError] = useState('')
   const [sel, setSel] = useState(bridges[0]?.id ?? null)
@@ -720,20 +733,20 @@ const OVERVIEW_GROUPS = {
 
 // culvert totals (inline onBlur) + zones list
 function CulvertEditor({ onClose }) {
-  const { execOverview, culvertZones, update } = useData()
+  const { o, culvertZones, update } = useExec()
   const log = useLogger()
   const setTotal = (k, label, raw) => {
     const v = Number(raw) || 0
-    if (Number(execOverview[k]) === v) return
-    update('exec-overview', 1, { [k]: v })
-    log('Culvert Summary', k, label, execOverview[k], v)
+    if (Number(o[k]) === v) return
+    update('exec-overview', o.id, { [k]: v })
+    log('Culvert Summary', k, label, o[k], v)
   }
   return (
     <div>
       <div className="label mb-1">Overall culverts</div>
       <div className="grid grid-cols-4 gap-2 mb-4">
         {[['culverts_total', 'Total'], ['culverts_completed', 'Completed'], ['box_culverts', 'Box'], ['pipe_culverts', 'Pipe']].map(([k, label]) => (
-          <Field key={k} label={label}><input type="number" className="input w-full" defaultValue={execOverview[k] ?? ''} onBlur={(e) => setTotal(k, label, e.target.value)} /></Field>
+          <Field key={k} label={label}><input type="number" className="input w-full" defaultValue={o[k] ?? ''} onBlur={(e) => setTotal(k, label, e.target.value)} /></Field>
         ))}
       </div>
       <div className="label mb-1">Outstanding by zone</div>
@@ -753,7 +766,7 @@ const EDIT_TITLES = {
 
 // per-box editor modal — opened from a box's ✎ button
 function SectionEditModal({ editKey, onClose }) {
-  const data = useData()
+  const data = useExec()
   const next = (rows) => num(rows[rows.length - 1]?.sort_order) + 1
   const g = OVERVIEW_GROUPS[editKey]
   return (
@@ -770,6 +783,38 @@ function SectionEditModal({ editKey, onClose }) {
   )
 }
 
+// Copy the latest snapshot forward into a new month.
+function NewMonthModal({ latest, existing, onClose, onCreated }) {
+  const { startNewMonth } = useData()
+  const [month, setMonth] = useState(() => addMonth(latest))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const go = async () => {
+    setError('')
+    if (!/^\d{4}-\d{2}$/.test(month)) return setError('Pick a valid month')
+    if ((existing ?? []).includes(month)) return setError('That month already exists')
+    setBusy(true)
+    try { const r = await startNewMonth(month); onCreated(r.month) }
+    catch (e) { setError(e.message); setBusy(false) }
+  }
+  return (
+    <Modal title="Start New Month" onClose={onClose}>
+      <p className="text-sm text-neutral-600 mb-3">
+        Copies the latest snapshot{latest ? ` (${fmtMonth(latest)})` : ''} forward into a new month. All figures,
+        bridges and pile progress carry over, so you only edit what changed. Monthly targets reset to unchecked.
+      </p>
+      <Field label="New month">
+        <input type="month" className="input w-full" value={month} onChange={(e) => setMonth(e.target.value)} />
+      </Field>
+      {error && <div className="text-xs text-red-600 mt-2">{error}</div>}
+      <div className="flex justify-end gap-2 mt-4">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn-dark" onClick={go} disabled={busy}>{busy ? 'Creating…' : 'Create month'}</button>
+      </div>
+    </Modal>
+  )
+}
+
 // ===========================================================================
 export default function ExecDashboard() {
   const data = useData()
@@ -777,12 +822,38 @@ export default function ExecDashboard() {
   const [preview, setPreview] = useState(false)
   const [editKey, setEditKey] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [newMonth, setNewMonth] = useState(false)
+  const [month, setMonth] = useState(null)
+
+  const months = data.execMonths ?? [] // newest first
+  const activeMonth = month && months.includes(month) ? month : (months[0] ?? null)
+
+  // Everything the sheet and editors read is scoped to the active month; `create`
+  // stamps that month so new rows land in the snapshot being viewed.
+  const exec = useMemo(() => {
+    const inMonth = (rows) => (rows ?? []).filter((r) => r.month === activeMonth)
+    return {
+      month: activeMonth,
+      o: (data.execOverviews ?? []).find((r) => r.month === activeMonth) ?? null,
+      ewActivities: inMonth(data.ewActivities),
+      pavementLayers: inMonth(data.pavementLayers),
+      culvertZones: inMonth(data.culvertZones),
+      bridges: inMonth(data.bridges),
+      bridgeProgress: inMonth(data.bridgeProgress),
+      bridgePiles: inMonth(data.bridgePiles),
+      projectMachinery: inMonth(data.projectMachinery),
+      monthlyTargets: inMonth(data.monthlyTargets),
+      create: (resource, body) => data.create(resource, { ...body, month: activeMonth }),
+      update: data.update,
+      remove: data.remove,
+    }
+  }, [data, activeMonth])
 
   const d = useMemo(() => {
-    const o = data.execOverview
-    const bridges = (data.bridges ?? []).slice().sort((a, b) => num(a.sort_order) - num(b.sort_order)).map((br) => {
-      const cells = (data.bridgeProgress ?? []).filter((c) => Number(c.bridge_id) === Number(br.id)) // structure
-      const piles = (data.bridgePiles ?? []).filter((p) => Number(p.bridge_id) === Number(br.id))    // bored
+    const o = exec.o
+    const bridges = exec.bridges.slice().sort((a, b) => num(a.sort_order) - num(b.sort_order)).map((br) => {
+      const cells = exec.bridgeProgress.filter((c) => Number(c.bridge_id) === Number(br.id)) // structure
+      const piles = exec.bridgePiles.filter((p) => Number(p.bridge_id) === Number(br.id))    // bored
       const byEl = {}
       for (const p of piles) {
         const e = byEl[p.element] || (byEl[p.element] = { done: 0, total: 0, inprog: 0, test: 0 })
@@ -798,17 +869,17 @@ export default function ExecDashboard() {
     const completed = num(o?.culverts_completed)
     return {
       o,
-      ew: (data.ewActivities ?? []).slice().sort((a, b) => num(a.sort_order) - num(b.sort_order)),
-      pav: (data.pavementLayers ?? []).slice().sort((a, b) => num(a.sort_order) - num(b.sort_order)),
-      zones: (data.culvertZones ?? []).slice().sort((a, b) => num(a.sort_order) - num(b.sort_order)),
+      ew: exec.ewActivities.slice().sort((a, b) => num(a.sort_order) - num(b.sort_order)),
+      pav: exec.pavementLayers.slice().sort((a, b) => num(a.sort_order) - num(b.sort_order)),
+      zones: exec.culvertZones.slice().sort((a, b) => num(a.sort_order) - num(b.sort_order)),
       bridges,
-      machinery: (data.projectMachinery ?? []).slice().sort((a, b) => num(a.sort_order) - num(b.sort_order)),
-      machineTotal: (data.projectMachinery ?? []).reduce((s, m) => s + num(m.count), 0),
-      targets: (data.monthlyTargets ?? []).slice().sort((a, b) => num(a.sort_order) - num(b.sort_order)),
+      machinery: exec.projectMachinery.slice().sort((a, b) => num(a.sort_order) - num(b.sort_order)),
+      machineTotal: exec.projectMachinery.reduce((s, m) => s + num(m.count), 0),
+      targets: exec.monthlyTargets.slice().sort((a, b) => num(a.sort_order) - num(b.sort_order)),
       culverts: { total, completed, outstanding: total - completed },
       poles: { done: num(o?.poles_done), total: num(o?.poles_total) },
     }
-  }, [data])
+  }, [exec])
 
   const exportPdf = async () => {
     if (!sheetRef.current || busy) return
@@ -817,38 +888,50 @@ export default function ExecDashboard() {
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <h2 className="text-sm font-bold text-neutral-700">Executive Project Dashboard</h2>
-        <span className="text-xs text-neutral-400">— hover a box and click ✎ to edit; export the PDF to present</span>
-        <div className="flex-1" />
-        <button className="btn" onClick={() => setEditKey('log')}>🕑 Update Log</button>
-        <button className="btn" onClick={() => setPreview(true)}>👁 Preview</button>
-        <button className="btn-dark" onClick={exportPdf} disabled={busy}>{busy ? 'Generating…' : '⬇ Export PDF'}</button>
-      </div>
-      {editKey && <SectionEditModal editKey={editKey} onClose={() => setEditKey(null)} />}
+    <ExecCtx.Provider value={exec}>
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h2 className="text-sm font-bold text-neutral-700">Executive Project Dashboard</h2>
+          <span className="text-xs text-neutral-400">— hover a box and click ✎ to edit; export the PDF to present</span>
+          <div className="flex-1" />
+          {months.length > 0 && (
+            <label className="flex items-center gap-1.5 text-xs text-neutral-500">
+              <TbCalendarMonth size={15} className="text-neutral-400" />
+              <select className="input !py-1 text-xs" value={activeMonth ?? ''} onChange={(e) => setMonth(e.target.value)}>
+                {months.map((m) => <option key={m} value={m}>{fmtMonth(m)}</option>)}
+              </select>
+            </label>
+          )}
+          <button className="btn flex items-center gap-1" onClick={() => setNewMonth(true)}><TbCalendarPlus size={15} /> New Month</button>
+          <button className="btn" onClick={() => setEditKey('log')}>🕑 Update Log</button>
+          <button className="btn" onClick={() => setPreview(true)}>👁 Preview</button>
+          <button className="btn-dark" onClick={exportPdf} disabled={busy}>{busy ? 'Generating…' : '⬇ Export PDF'}</button>
+        </div>
+        {editKey && <SectionEditModal editKey={editKey} onClose={() => setEditKey(null)} />}
+        {newMonth && <NewMonthModal latest={months[0] ?? null} existing={months} onClose={() => setNewMonth(false)} onCreated={(m) => { setMonth(m); setNewMonth(false) }} />}
 
-      {/* On-screen sheet (scrolls horizontally on small screens) — each box has its own ✎ edit */}
-      <div className="overflow-x-auto border border-neutral-200 rounded-lg">
-        <div ref={sheetRef}><ExecSheet d={d} onEdit={setEditKey} /></div>
-      </div>
+        {/* On-screen sheet (scrolls horizontally on small screens) — each box has its own ✎ edit */}
+        <div className="overflow-x-auto border border-neutral-200 rounded-lg">
+          <div ref={sheetRef}><ExecSheet d={d} onEdit={setEditKey} /></div>
+        </div>
 
-      {preview && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-start justify-center overflow-auto p-6" onClick={() => setPreview(false)}>
-          <div className="bg-white rounded-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-4 py-2 border-b border-neutral-200">
-              <span className="font-bold text-sm">Preview — exactly what the PDF will contain</span>
-              <div className="flex gap-2">
-                <button className="btn-dark" onClick={exportPdf} disabled={busy}>{busy ? 'Generating…' : '⬇ Export PDF'}</button>
-                <button className="btn" onClick={() => setPreview(false)}>Close</button>
+        {preview && (
+          <div className="fixed inset-0 z-50 bg-black/70 flex items-start justify-center overflow-auto p-6" onClick={() => setPreview(false)}>
+            <div className="bg-white rounded-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-4 py-2 border-b border-neutral-200">
+                <span className="font-bold text-sm">Preview — exactly what the PDF will contain</span>
+                <div className="flex gap-2">
+                  <button className="btn-dark" onClick={exportPdf} disabled={busy}>{busy ? 'Generating…' : '⬇ Export PDF'}</button>
+                  <button className="btn" onClick={() => setPreview(false)}>Close</button>
+                </div>
+              </div>
+              <div className="origin-top" style={{ transform: 'scale(0.78)', width: SHEET_W, height: 'auto' }}>
+                <ExecSheet d={d} />
               </div>
             </div>
-            <div className="origin-top" style={{ transform: 'scale(0.78)', width: SHEET_W, height: 'auto' }}>
-              <ExecSheet d={d} />
-            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </ExecCtx.Provider>
   )
 }

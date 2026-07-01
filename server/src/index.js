@@ -205,6 +205,13 @@ app.get('/api/backup', (_req, res) => {
 })
 app.get('/api/backups', (_req, res) => res.json(db.listBackups()))
 
+// Executive Dashboard — copy the latest snapshot forward into a new month.
+app.post('/api/exec/new-month', (req, res) => {
+  const result = db.startNewMonth(req.body?.month)
+  if (result.error) return res.status(400).json({ error: result.error })
+  res.status(201).json(result)
+})
+
 // --- Sale attachments ---
 const saleDir = (id) => path.join(ATTACH_DIR, `sale-${Number(id)}`)
 const listAttachments = (id) =>
