@@ -5,7 +5,6 @@ import PlantSelector from './components/PlantSelector.jsx'
 import PlantsManager from './components/PlantsManager.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import Overview from './pages/Overview.jsx'
-import Projects from './pages/Projects.jsx'
 import Sales from './pages/Sales.jsx'
 import SalesDashboard from './pages/SalesDashboard.jsx'
 import PourRecords from './pages/PourRecords.jsx'
@@ -14,6 +13,7 @@ import Machinery from './pages/Machinery.jsx'
 import Manpower from './pages/Manpower.jsx'
 import Costing from './pages/Costing.jsx'
 import CostLog from './pages/CostLog.jsx'
+import ExecDashboard from './pages/ExecDashboard.jsx'
 
 // The plant dashboard tab set, shared by the Batching and Premix workspaces
 // (each scopes to its own plant type via `plantType`).
@@ -33,7 +33,10 @@ const plantTabs = (prefix) => [
 const WORKSPACES = {
   plant: { label: 'Batching Plant', icon: '🏭', plantType: 'batching', tabs: plantTabs('bp') },
   premix: { label: 'Premix Plant', icon: '🧱', plantType: 'premix', tabs: plantTabs('pp') },
-  projects: { label: 'Projects', icon: '🏗️', plantType: null, tabs: [['projects', 'Projects', Projects]] },
+  projects: {
+    label: 'Projects', icon: '🏗️', plantType: null,
+    tabs: [['exec-dashboard', 'Executive Dashboard', ExecDashboard]],
+  },
 }
 
 const persisted = (key, fallback) => {

@@ -154,6 +154,17 @@ const RESOURCES = {
       }
     },
   },
+  // --- Executive Project Dashboard ---
+  'exec-overview': { sheet: 'ExecOverview', required: [] },
+  'ew-activities': { sheet: 'EwActivities', required: ['name'] },
+  'pavement-layers': { sheet: 'PavementLayers', required: ['name'] },
+  'culvert-zones': { sheet: 'CulvertZones', required: ['zone'] },
+  bridges: { sheet: 'Bridges', required: ['name'], dependents: [['BridgeProgress', 'bridge_id']] },
+  'bridge-progress': { sheet: 'BridgeProgress', required: ['bridge_id', 'element'], fks: { bridge_id: 'Bridges' } },
+  'bridge-piles': { sheet: 'BridgePiles', required: ['bridge_id', 'element'], fks: { bridge_id: 'Bridges' } },
+  'project-machinery': { sheet: 'ProjectMachinery', required: ['name'] },
+  'monthly-targets': { sheet: 'MonthlyTargets', required: [] },
+  'project-log': { sheet: 'ProjectLog', required: [] },
   attendance: {
     sheet: 'Attendance', required: ['worker_id', 'date', 'status'],
     fks: { worker_id: 'Workers' },

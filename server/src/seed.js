@@ -228,5 +228,73 @@ export function buildSeedData() {
     ProjectUpdates: projectUpdates,
     FoundationGroups: foundationGroups,
     Piles: piles,
+    ...buildExecSeed(),
   }
+}
+
+// Executive Project Dashboard — SSLR2 Package 2B figures (data as at Jun 2026).
+export function buildExecSeed() {
+  const ExecOverview = [{
+    id: 1,
+    title: 'SSLR2 PACKAGE 2B', subtitle: 'Executive Project Dashboard',
+    contract_sum_mil: 747, start_date: '2024-07-17', end_date: '2028-06-16',
+    length_km: 56.84, chainage_from: 'CH 49+100', chainage_to: 'CH 105+940',
+    road_width_text: '3.5 m + 3.5 m = 7.0 m (Incl. 0.25 m both side marginal strip)',
+    data_as_at: '2026-06', construction_period_text: '22 / 48 Months',
+    physical_pct: 37.03, physical_plan_pct: 36.12, financial_pct: 37.99, financial_plan_pct: 37.10,
+    earthwork_total_mil: 6.40, earth_mil: 4.14, rock_mil: 1.12, cut_to_dispose_mil: 5.26, cut_to_fill_mil: 1.14,
+    dcr_tonne: 409000, premix20_tonne: 188000, acw20_m3: 95000, acb28_m3: 100000,
+    culverts_total: 97, culverts_completed: 62, box_culverts: 11, pipe_culverts: 24,
+    poles_total: 471, poles_done: 41, poles_km: 1.788, cable_spans: 30, cable_km: 1.372,
+    contract_excl_mil: 624, total_expenses_mil: 123.85, current_profit_mil: 44.28,
+    claims_to_date_mil: 230, balance_to_claim_mil: 421, cumulative_ipc_mil: 171.6, avg_monthly_claim_mil: 16.2,
+  }]
+
+  const EwActivities = [
+    ['Site Clearing', 90.32], ['Cut & Dispose (Earth)', 36.06], ['Cut & Dispose (Rock)', 40.03],
+    ['Cut to Fill', 49.20], ['Embankment Fill', 49.20], ['Hydroseeding', 6.15],
+  ].map(([name, pct], i) => ({ id: i + 1, name, pct, sort_order: i + 1 }))
+
+  const PavementLayers = [
+    ['Subgrade', 15.36], ['Subbase', 14.49], ['Road Base', 13.75],
+  ].map(([name, completed_km], i) => ({ id: i + 1, name, total_km: 56.84, completed_km, sort_order: i + 1 }))
+
+  const CulvertZones = [
+    ['Zone 1', 15], ['Zone 2', 7], ['Zone 3', 1], ['Zone 4', 5], ['Zone 5', 7], ['Zone 6', 0],
+  ].map(([zone, outstanding], i) => ({ id: i + 1, zone, outstanding, sort_order: i + 1 }))
+
+  // bridges + a bored-pile / structure matrix per bridge (done/total; mostly not started)
+  const bridgeDefs = [
+    ['Sg Senap', 3, 104.8], ['Sg Limbang 1', 7, 215.6], ['Sg Limbang 2', 7, 225.6],
+    ['Sg Ensuami', 5, 256.0], ['Sg Limbang 3', 9, 140.2],
+  ]
+  const Bridges = bridgeDefs.map(([name, span, length_m], i) => ({ id: i + 1, name, span, length_m, sort_order: i + 1 }))
+  const STRUCT = ['Pile Cap', 'Column', 'Headstock', 'T20', 'T25', 'T30', 'T35']
+  const BridgeProgress = []   // structure elements (done/total)
+  const BridgePiles = []      // individual bored piles (status + test flag)
+  let bpId = 0, plId = 0
+  for (const br of Bridges) {
+    const piers = Math.max(0, Number(br.span) - 1)
+    const boreEls = ['Abt A', ...Array.from({ length: piers }, (_, k) => `P${k + 1}`), 'Abt B']
+    boreEls.forEach((element, gi) => {
+      const total = element.startsWith('Abt') ? 14 : 16
+      for (let i = 1; i <= total; i++) {
+        BridgePiles.push({ id: ++plId, bridge_id: br.id, element, label: String(i), status: 'not_done', is_test_pile: gi === 0 && i === 1 ? 1 : 0, done_date: '', sort_order: i })
+      }
+    })
+    STRUCT.forEach((element, k) => BridgeProgress.push({ id: ++bpId, bridge_id: br.id, element, done: 0, total: 14, sort_order: k + 1 }))
+  }
+
+  const ProjectMachinery = [
+    ['Excavators', 56], ['Dump Trucks', 46], ['Mixer Trucks', 12], ['Bulldozers', 10],
+    ['Rollers', 22], ['Motor Graders', 2], ['Long Arm Excavator', 1], ['Mobile Cranes', 5],
+    ['Bored Pile Machines', 5], ['Crawler Cranes', 3], ['Shovels', 5], ['Paver', 1],
+  ].map(([name, count], i) => ({ id: i + 1, name, count, sort_order: i + 1 }))
+
+  const MonthlyTargets = [
+    'Complete 4 nos Culverts', 'Laying 3km Roadbase', 'Completed Limbang 1 Pier 3 Test Pile',
+    'Completed 2 Pile Caps', 'Laying Premix 5km',
+  ].map((text, i) => ({ id: i + 1, month: '2026-07', text, done: 1, sort_order: i + 1 }))
+
+  return { ExecOverview, EwActivities, PavementLayers, CulvertZones, Bridges, BridgeProgress, BridgePiles, ProjectMachinery, MonthlyTargets }
 }

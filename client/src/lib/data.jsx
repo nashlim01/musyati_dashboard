@@ -10,6 +10,9 @@ const RESOURCE_SHEET = {
   'expense-categories': 'ExpenseCategories', machines: 'Machines', maintenance: 'MaintenanceRecords',
   workers: 'Workers', attendance: 'Attendance', projects: 'Projects', 'project-updates': 'ProjectUpdates',
   'foundation-groups': 'FoundationGroups', piles: 'Piles',
+  'exec-overview': 'ExecOverview', 'ew-activities': 'EwActivities', 'pavement-layers': 'PavementLayers',
+  'culvert-zones': 'CulvertZones', bridges: 'Bridges', 'bridge-progress': 'BridgeProgress', 'bridge-piles': 'BridgePiles',
+  'project-machinery': 'ProjectMachinery', 'monthly-targets': 'MonthlyTargets', 'project-log': 'ProjectLog',
 }
 
 async function request(method, url, body) {
@@ -143,6 +146,17 @@ export function DataProvider({ children }) {
       projectUpdates: d.ProjectUpdates ?? [],
       foundationGroups: d.FoundationGroups ?? [],
       piles: d.Piles ?? [],
+      // executive project dashboard
+      execOverview: (d.ExecOverview ?? [])[0] ?? null,
+      ewActivities: d.EwActivities ?? [],
+      pavementLayers: d.PavementLayers ?? [],
+      culvertZones: d.CulvertZones ?? [],
+      bridges: d.Bridges ?? [],
+      bridgeProgress: d.BridgeProgress ?? [],
+      bridgePiles: d.BridgePiles ?? [],
+      projectMachinery: d.ProjectMachinery ?? [],
+      monthlyTargets: d.MonthlyTargets ?? [],
+      projectLog: d.ProjectLog ?? [],
       plantsById: byId(d.Plants),
       companiesById: byId(d.Companies),
       gradesById: byId(d.Grades),

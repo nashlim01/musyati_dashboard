@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import XLSX from 'xlsx'
-import { buildSeedData } from './seed.js'
+import { buildSeedData, buildExecSeed } from './seed.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = path.join(__dirname, '..', 'data')
@@ -47,6 +47,31 @@ export const SCHEMA = {
   // bridge foundation: groups (abutment/pier) each hold a set of bore piles
   FoundationGroups: ['id', 'project_id', 'name', 'diameter_mm', 'sort_order', 'remarks'],
   Piles: ['id', 'group_id', 'label', 'status', 'is_test_pile', 'done_date', 'remarks'],
+
+  // --- Executive Project Dashboard (single package; snapshot figures, % computed) ---
+  ExecOverview: [
+    'id', 'title', 'subtitle', 'contract_sum_mil', 'start_date', 'end_date',
+    'length_km', 'chainage_from', 'chainage_to', 'road_width_text', 'data_as_at', 'construction_period_text',
+    'physical_pct', 'physical_plan_pct', 'financial_pct', 'financial_plan_pct',
+    'earthwork_total_mil', 'earth_mil', 'rock_mil', 'cut_to_dispose_mil', 'cut_to_fill_mil',
+    'dcr_tonne', 'premix20_tonne', 'acw20_m3', 'acb28_m3',
+    'culverts_total', 'culverts_completed', 'box_culverts', 'pipe_culverts',
+    'poles_total', 'poles_done', 'poles_km', 'cable_spans', 'cable_km',
+    'contract_excl_mil', 'total_expenses_mil', 'current_profit_mil', 'claims_to_date_mil',
+    'balance_to_claim_mil', 'cumulative_ipc_mil', 'avg_monthly_claim_mil',
+  ],
+  EwActivities: ['id', 'name', 'pct', 'sort_order'],
+  PavementLayers: ['id', 'name', 'total_km', 'completed_km', 'sort_order'],
+  CulvertZones: ['id', 'zone', 'outstanding', 'sort_order'],
+  Bridges: ['id', 'name', 'span', 'length_m', 'sort_order'],
+  // structure elements (Pile Cap, Column, Headstock, girder beams) as done/total counts
+  BridgeProgress: ['id', 'bridge_id', 'element', 'done', 'total', 'sort_order'],
+  // individual bored piles — status: not_done | in_progress | done; is_test_pile flag
+  BridgePiles: ['id', 'bridge_id', 'element', 'label', 'status', 'is_test_pile', 'done_date', 'sort_order'],
+  ProjectMachinery: ['id', 'name', 'count', 'sort_order'],
+  MonthlyTargets: ['id', 'month', 'text', 'done', 'sort_order'],
+  // audit trail of dashboard edits — reference past inputs when keying updates
+  ProjectLog: ['id', 'ts', 'section', 'field', 'label', 'old_value', 'new_value'],
 }
 
 let tables = {} // { sheetName: [row, ...] }
@@ -75,7 +100,45 @@ export function load() {
     tables[sheet] = raw.map((r) => normalize(sheet, r))
   }
   migrateLegacyPayments(rawBySheet)
+  seedExecIfEmpty()
+  seedBridgePilesIfEmpty()
   console.log(`Loaded workbook from ${FILE_PATH}`)
+}
+
+const isBoredElement = (el) => /^Abt|^P\d/i.test(String(el))
+
+// Convert legacy bored-pile elements (stored as done/total in BridgeProgress)
+// into individual pile records so each pile carries its own status + test flag.
+function seedBridgePilesIfEmpty() {
+  if ((tables.BridgePiles ?? []).length > 0) return
+  const bored = (tables.BridgeProgress ?? []).filter((r) => isBoredElement(r.element))
+  if (bored.length === 0) return
+  const piles = []
+  let id = 0
+  for (const r of bored) {
+    const total = Number(r.total) || 0
+    const done = Number(r.done) || 0
+    for (let i = 1; i <= total; i++) {
+      piles.push(normalize('BridgePiles', {
+        id: ++id, bridge_id: r.bridge_id, element: r.element, label: String(i),
+        status: i <= done ? 'done' : 'not_done', is_test_pile: 0, done_date: '', sort_order: i,
+      }))
+    }
+  }
+  tables.BridgePiles = piles
+  // bored elements now live in BridgePiles — keep only structure rows in BridgeProgress
+  tables.BridgeProgress = (tables.BridgeProgress ?? []).filter((r) => !isBoredElement(r.element))
+  persist()
+  console.log(`Migrated ${bored.length} bored elements into ${piles.length} BridgePiles`)
+}
+
+// Populate the Executive Dashboard sheets with the SSLR2 Package 2B figures the
+// first time they're empty (e.g. on an existing workbook created before this feature).
+function seedExecIfEmpty() {
+  if ((tables.ExecOverview ?? []).length > 0) return
+  for (const [sheet, rows] of Object.entries(buildExecSeed())) tables[sheet] = rows
+  persist()
+  console.log('Seeded Executive Dashboard (SSLR2 Package 2B)')
 }
 
 // One-time migration: the old model stored payment on each sale (payment_received /
